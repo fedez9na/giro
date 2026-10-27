@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1b4f9c">
+<meta name="referrer" content="no-referrer">
+<title>Giro</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icona.svg">
+<link rel="apple-touch-icon" href="icona-192.png">
+<link rel="stylesheet" href="app.css">
+<script type="importmap">{ "imports": { "pdf-lib": "./vendor/pdf-lib.esm.min.js" } }</script>
+</head>
+<body>
+<header class="testa">
+  <div>
+    <h1 id="giorno">Il tuo giro</h1>
+    <p id="conteggio" class="sotto"></p>
+  </div>
+  <label class="apri">Apri foglio<input id="file" type="file" accept="application/pdf,.pdf" hidden></label>
+</header>
+<main id="main"></main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
