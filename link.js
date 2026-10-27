@@ -22,7 +22,7 @@ const LAVORO = {
 // Il nome con cui si presenta lo sceglie Riccardo (il foglio non dice quale parola è il nome di battesimo).
 export function testoArrivo(i, ora, chiSono) {
   const chi = chiSono ? `sono ${chiSono}, il tecnico` : 'sono il tecnico';
-  return `Buongiorno, ${chi} per ${LAVORO[i.tipologia] ?? `l’intervento ${i.tipologia}`}. Arrivo verso le ${ora}.`;
+  return `Buongiorno, ${chi} per ${LAVORO[i.tipologia] ?? `l’intervento ${i.tipologia}`}. ${ora ? `Arrivo verso le ${ora}.` : 'Arrivo a breve.'}`;
 }
 
 // Senza numero WhatsApp fa scegliere il contatto: il testo è già scritto.

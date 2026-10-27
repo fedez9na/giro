@@ -1,60 +1,151 @@
-/* Normale e leggibile al sole: nero su bianco, un blu per le azioni, tasti grandi. Font di sistema: niente richieste fuori. */
-:root { --testo: #111; --sfondo: #f2f3f5; --carta: #fff; --blu: #1b4f9c; --verde: #0b7a3e; --rosso: #b3261e; --grigio: #5f6368; --linea: #dadce0; }
-@media (prefers-color-scheme: dark) {
-  :root { --testo: #f1f3f4; --sfondo: #121212; --carta: #1e1f22; --blu: #8ab4f8; --verde: #81c995; --rosso: #f28b82; --grigio: #9aa0a6; --linea: #3c4043; }
+/* Il canone, fatto per bene. iPhone: liste raggruppate di iOS coi colori di sistema nella variante «aumenta contrasto»
+   (al sole serve). Android: Material 3 come le app Google. Chiaro o scuro lo decide il telefono, come WhatsApp e Maps. */
+
+:root {
+  /* iOS, chiaro (systemGroupedBackground, celle, label; tinta e stati in alto contrasto) */
+  --sfondo: #f2f2f7; --cella: #ffffff; --testo: #000000; --testo-2: #4a4a4f; --separatore: #c6c6c8;
+  --tinta: #0040dd; --tinta-tenue: rgba(0, 64, 221, .1); --su-tinta: #ffffff;
+  --verde: #1e7b34; --rosso: #d70015; --raggio: 10px; --raggio-tasto: 12px; /* verde: 5,3:1 su bianco (quello di Apple fa 4,4) */
+  --font: -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: light dark;
 }
+@media (prefers-color-scheme: dark) {
+  :root { --sfondo: #000000; --cella: #1c1c1e; --testo: #ffffff; --testo-2: #aeaeb2; --separatore: #38383a;
+    --tinta: #409cff; --tinta-tenue: rgba(64, 156, 255, .16); --su-tinta: #000000; --verde: #30db5b; --rosso: #ff6961; }
+}
+/* Android: ruoli colore Material 3 (palette delle app Google) */
+[data-os="android"] {
+  --sfondo: #e9eef6; --cella: #ffffff; --testo: #1f1f1f; --testo-2: #444746; --separatore: #c4c7c5;
+  --tinta: #0b57d0; --tinta-tenue: #d3e3fd; --su-tinta: #ffffff; --su-tinta-tenue: #041e49;
+  --verde: #146c2e; --rosso: #b3261e; --raggio: 16px; --raggio-tasto: 999px;
+  --font: Roboto, system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  [data-os="android"] { --sfondo: #131314; --cella: #1e1f20; --testo: #e3e3e3; --testo-2: #c4c7c5; --separatore: #444746;
+    --tinta: #a8c7fa; --tinta-tenue: #0842a0; --su-tinta: #062e6f; --su-tinta-tenue: #d3e3fd; --verde: #6dd58c; --rosso: #f2b8b5; }
+}
+
+/* Dynamic Type su iPhone: la dimensione del testo segue quella scelta nelle Impostazioni */
+html { font: -apple-system-body; font-family: var(--font); }
+[data-os="android"] { font: 100%/1.4 var(--font); }
 * { box-sizing: border-box; margin: 0; }
-body { background: var(--sfondo); color: var(--testo); font: 17px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; padding-bottom: env(safe-area-inset-bottom); }
-button, input, select, textarea { font: inherit; color: inherit; }
+body { background: var(--sfondo); color: var(--testo); font-family: var(--font); font-size: 1rem; line-height: 1.3;
+  -webkit-tap-highlight-color: transparent; padding: env(safe-area-inset-top) env(safe-area-inset-right) calc(24px + env(safe-area-inset-bottom)) env(safe-area-inset-left); }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; }
 
-.testa { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: var(--carta); border-bottom: 1px solid var(--linea); }
-h1 { font-size: 20px; }
-.sotto { font-size: 14px; color: var(--grigio); }
-.apri { background: var(--blu); color: #fff; border-radius: 10px; padding: 12px 16px; font-weight: 600; white-space: nowrap; cursor: pointer; }
-@media (prefers-color-scheme: dark) { .apri { color: #111; } }
+/* ---------- barre ---------- */
+.barra { position: sticky; top: 0; z-index: 3; background: var(--sfondo); display: flex; align-items: center; min-height: 44px; padding: 0 8px; }
+.barra .azione { margin-left: auto; min-height: 44px; min-width: 44px; padding: 0 8px; border: 0; background: none; color: var(--tinta); font-size: 1.0625rem; }
+.barra .indietro { display: flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 8px 0 0; border: 0; background: none; color: var(--tinta); font-size: 1.0625rem; }
+.titolo-grande { padding: 4px 16px 10px; }
+.titolo-grande h1 { font-size: 2.125rem; font-weight: 700; letter-spacing: .01em; line-height: 1.15; }
+.titolo-grande p { color: var(--testo-2); font-size: .9375rem; margin-top: 2px; }
+/* Android: barra in alto Material, freccia indietro sola icona da 48dp, azioni testuali da 48dp */
+[data-os="android"] .barra { min-height: 64px; padding: 0 4px; }
+[data-os="android"] .barra .azione { min-height: 48px; font-weight: 500; font-size: .875rem; letter-spacing: .01em; padding: 0 12px; }
+[data-os="android"] .barra .indietro { min-width: 48px; min-height: 48px; justify-content: center; padding: 0; color: var(--testo); }
+[data-os="android"] .barra .indietro svg { width: 24px; height: 24px; }
+[data-os="android"] .etichetta-indietro { display: none; }
+[data-os="android"] .prossimo .apri-scheda { min-height: 48px; }
+[data-os="android"] .titolo-grande h1 { font-size: 1.75rem; font-weight: 400; letter-spacing: 0; }
 
-main { max-width: 640px; margin: 0 auto; padding: 12px 12px 24px; display: flex; flex-direction: column; gap: 10px; }
-.avviso { background: var(--carta); border-left: 5px solid var(--blu); border-radius: 8px; padding: 12px 14px; }
-.avviso.errore { border-color: var(--rosso); }
-.avviso ul { padding-left: 18px; margin-top: 4px; }
-.vuoto { text-align: center; color: var(--grigio); padding: 48px 16px; }
+/* ---------- liste raggruppate ---------- */
+.gruppo { margin: 0 16px 22px; }
+.gruppo > h2 { font-size: .8125rem; font-weight: 400; color: var(--testo-2); text-transform: none; padding: 0 16px 6px; }
+.gruppo > h2.forte { font-size: 1.25rem; font-weight: 700; color: var(--testo); padding: 0 4px 8px; }
+[data-os="android"] .gruppo > h2 { font-size: .875rem; font-weight: 500; color: var(--tinta); padding-left: 4px; }
+[data-os="android"] .gruppo > h2.forte { font-size: 1.375rem; font-weight: 400; color: var(--testo); }
+.lista { background: var(--cella); border-radius: var(--raggio); overflow: hidden; }
+.piede { font-size: .8125rem; color: var(--testo-2); padding: 6px 16px 0; }
 
-details.int { background: var(--carta); border-radius: 12px; border: 1px solid var(--linea); }
-details.int[open] { border-color: var(--blu); box-shadow: 0 0 0 1px var(--blu); }
-details.int > summary { list-style: none; display: grid; grid-template-columns: 64px 1fr auto; gap: 2px 10px; padding: 12px 14px; cursor: pointer; min-height: 64px; align-items: center; }
-details.int > summary::-webkit-details-marker { display: none; }
-.ora { font-weight: 700; font-size: 19px; font-variant-numeric: tabular-nums; }
-.comune { font-weight: 700; font-size: 18px; }
-.tipo { grid-column: 2; font-size: 15px; color: var(--grigio); }
-.stato { grid-row: 1 / 3; grid-column: 3; font-weight: 700; font-size: 14px; border-radius: 999px; padding: 4px 10px; background: var(--sfondo); color: var(--grigio); }
-.stato.ok { background: var(--verde); color: #fff; }
-.stato.ko { background: var(--rosso); color: #fff; }
-.stato.prossimo { background: var(--blu); color: #fff; }
-@media (prefers-color-scheme: dark) { .stato.ok, .stato.ko, .stato.prossimo { color: #111; } }
-.nota { grid-column: 2 / 4; font-size: 14px; font-weight: 600; color: var(--rosso); }
-details.fatto > summary .comune, details.fatto > summary .ora { color: var(--grigio); }
+.riga { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 11px 16px; background: none; border: 0;
+  text-align: left; position: relative; color: var(--testo); text-decoration: none; }
+.riga + .riga::before { content: ''; position: absolute; top: 0; left: 16px; right: 0; border-top: .5px solid var(--separatore); }
+.riga:active { background: var(--separatore); }
+[data-os="android"] .riga { min-height: 56px; padding: 12px 16px; }
+.riga .ora { flex: 0 0 3.2em; font-weight: 600; font-variant-numeric: tabular-nums; }
+.riga .corpo { flex: 1; min-width: 0; }
+.riga .principale { font-size: 1.0625rem; }
+.riga .secondaria { font-size: .9375rem; color: var(--testo-2); }
+.riga .nota { font-size: .9375rem; color: var(--rosso); font-weight: 500; }
+.riga .chevron { color: var(--testo-2); flex: 0 0 auto; }
+.riga.fatta .ora, .riga.fatta .principale { color: var(--testo-2); }
+.esito-ok { color: var(--verde); font-weight: 600; }
+.esito-ko { color: var(--rosso); font-weight: 600; }
+.riga.azione-riga { justify-content: center; color: var(--tinta); font-size: 1.0625rem; }
+.riga.azione-riga.pieno { background: var(--tinta); color: var(--su-tinta); font-weight: 600; }
 
-.scheda { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 12px; }
-.cliente { font-size: 20px; font-weight: 700; }
-.azioni { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.azioni a, .azioni button { min-height: 64px; border-radius: 12px; border: 2px solid var(--blu); background: var(--carta); color: var(--blu);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; text-decoration: none; font-weight: 700; text-align: center; padding: 6px; }
-.azioni a.primario { background: var(--blu); color: #fff; }
-@media (prefers-color-scheme: dark) { .azioni a.primario { color: #111; } }
-.azioni small { font-weight: 400; font-size: 12px; }
-.azioni [aria-disabled="true"] { border-color: var(--linea); color: var(--grigio); }
+/* ---------- il prossimo ---------- */
+.prossimo { padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+.prossimo .quando { font-size: 1.0625rem; font-weight: 600; color: var(--testo); font-variant-numeric: tabular-nums; }
+.prossimo .dove { font-size: 1.75rem; font-weight: 700; line-height: 1.15; }
+.prossimo .chi { font-size: 1.0625rem; }
+.prossimo .cosa { font-size: .9375rem; color: var(--testo-2); }
+.prossimo .nota { font-size: .9375rem; color: var(--rosso); font-weight: 600; margin-top: 2px; }
+.prossimo .apri-scheda { align-self: flex-start; margin-top: 6px; border: 0; background: none; color: var(--tinta); padding: 6px 0; min-height: 44px; font-size: 1.0625rem; }
 
-.campi { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-label.campo { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--grigio); }
-label.campo input, label.campo select { font-size: 17px; color: var(--testo); background: var(--sfondo); border: 1px solid var(--linea); border-radius: 8px; padding: 10px; min-height: 48px; width: 100%; }
+/* le tre azioni, come nella scheda Contatti / Maps */
+.azioni { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 0 0; }
+.azioni a, .azioni button { min-height: 64px; border: 0; border-radius: var(--raggio-tasto); background: var(--tinta-tenue); color: var(--tinta);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-decoration: none; font-size: .8125rem; font-weight: 600; padding: 8px 4px; text-align: center; line-height: 1.15; }
+.azioni svg { width: 24px; height: 24px; }
+[data-os="android"] .azioni a, [data-os="android"] .azioni button { border-radius: 16px; color: var(--su-tinta-tenue); }
 
-.esito { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.esito button { min-height: 56px; border-radius: 12px; border: 2px solid var(--linea); background: var(--carta); font-weight: 800; font-size: 19px; }
-.esito button[aria-pressed="true"].b-ok { background: var(--verde); border-color: var(--verde); color: #fff; }
-.esito button[aria-pressed="true"].b-ko { background: var(--rosso); border-color: var(--rosso); color: #fff; }
+/* ---------- campi nelle celle ---------- */
+label.riga { cursor: text; }
+.riga .etichetta { flex: 0 0 auto; min-width: 6.5em; }
+.riga input { flex: 1; min-width: 0; border: 0; background: none; text-align: right; color: var(--testo); font-size: 1.0625rem; padding: 6px 0; min-height: 32px; }
+.riga input::placeholder { color: var(--testo-2); opacity: .8; }
+[data-os="android"] .riga input { text-align: left; }
 
-.fine { background: var(--carta); border-radius: 12px; border: 1px solid var(--linea); padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
-.fine button.manda { min-height: 56px; border-radius: 12px; border: 0; background: var(--blu); color: #fff; font-weight: 700; font-size: 18px; }
-@media (prefers-color-scheme: dark) { .fine button.manda { color: #111; } }
-.piccolo { font-size: 13px; color: var(--grigio); }
+/* controllo segmentato OK / KO */
+/* iOS: riempimento di sistema leggero (tertiarySystemFill), come UISegmentedControl */
+.segmenti { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; margin: 12px 16px; border-radius: 9px; background: rgba(118, 118, 128, .12); }
+@media (prefers-color-scheme: dark) { .segmenti { background: rgba(118, 118, 128, .24); } }
+.segmenti button { min-height: 44px; border: 0; border-radius: 7px; background: transparent; font-weight: 600; font-size: 1.0625rem; color: var(--testo); }
+.segmenti button[aria-pressed="true"].ok { background: var(--verde); color: #fff; }
+.segmenti button[aria-pressed="true"].ko { background: var(--rosso); color: #fff; }
+@media (prefers-color-scheme: dark) { .segmenti button[aria-pressed="true"] { color: #000 !important; } }
+[data-os="android"] .segmenti { background: none; border: 1px solid var(--separatore); border-radius: 999px; padding: 0; gap: 0; overflow: hidden; }
+[data-os="android"] .segmenti button { border-radius: 0; min-height: 48px; }
+[data-os="android"] .segmenti button + button { border-left: 1px solid var(--separatore); }
+
+/* ---------- testata della scheda ---------- */
+.testata { padding: 4px 16px 6px; }
+.testata .dove { font-size: 1.75rem; font-weight: 700; line-height: 1.15; }
+.testata .quando { color: var(--testo-2); font-size: .9375rem; margin-top: 4px; }
+.testata .chi { font-size: 1.25rem; font-weight: 600; margin-top: 10px; }
+.testata .nota { font-size: .9375rem; color: var(--rosso); font-weight: 600; margin-top: 4px; }
+
+/* «Segnato OK · Annulla»: snackbar su Android, barra in basso su iPhone */
+.avviso-basso { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 5; display: flex; align-items: center; gap: 12px;
+  min-height: 52px; padding: 4px 8px 4px 16px; border-radius: 12px; background: #1c1c1e; color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+.avviso-basso span { flex: 1; }
+.avviso-basso button { min-height: 44px; padding: 0 12px; border: 0; background: none; color: #64aaff; font-weight: 600; }
+@media (prefers-color-scheme: dark) { .avviso-basso { background: #e5e5ea; color: #000; } .avviso-basso button { color: #0040dd; } }
+[data-os="android"] .avviso-basso { border-radius: 4px; background: #303030; } /* Material: inverse surface */
+[data-os="android"] .avviso-basso button { min-height: 48px; color: #a8c7fa; font-weight: 500; }
+.testata .azioni { padding-top: 14px; }
+
+/* ---------- vuoto e avvisi ---------- */
+.passi { counter-reset: passo; }
+.passi .riga::after { content: none; }
+.numero { flex: 0 0 28px; height: 28px; border-radius: 50%; background: var(--tinta); color: var(--su-tinta); display: grid; place-items: center; font-weight: 700; font-size: .9375rem; }
+.tasto-pieno { display: block; width: calc(100% - 32px); margin: 0 16px 12px; min-height: 50px; border: 0; border-radius: var(--raggio-tasto);
+  background: var(--tinta); color: var(--su-tinta); font-weight: 600; font-size: 1.0625rem; }
+.avviso { display: flex; gap: 12px; padding: 12px 16px; align-items: flex-start; }
+.avviso svg { flex: 0 0 22px; width: 22px; height: 22px; color: var(--tinta); margin-top: 1px; }
+.avviso.errore svg { color: var(--rosso); }
+.avviso ul { margin: 4px 0 0; padding-left: 18px; color: var(--testo-2); font-size: .9375rem; }
+
+/* Android: «Foglio nuovo» sta nella barra in alto (è un'azione secondaria: niente FAB) */
+[data-os="android"] .tasto-pieno { min-height: 48px; }
+body:has(.avviso-basso) { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .schermo { animation: entra .22s cubic-bezier(.2, .8, .2, 1); }
+  @keyframes entra { from { opacity: .4; transform: translateX(16px); } }
+}
+@media (min-width: 640px) { #app { max-width: 600px; margin: 0 auto; } }

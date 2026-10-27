@@ -3,24 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1b4f9c">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
 <meta name="referrer" content="no-referrer">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Giro">
 <title>Giro</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icona.svg">
 <link rel="apple-touch-icon" href="icona-192.png">
 <link rel="stylesheet" href="app.css">
 <script type="importmap">{ "imports": { "pdf-lib": "./vendor/pdf-lib.esm.min.js" } }</script>
+<!--
+THESIS: la giornata del tecnico come la mostrerebbe il suo telefono: lista raggruppata di sistema, «Prossimo» in cima con le tre
+azioni, la scheda come pagina con Indietro. Rifiuta la dashboard a card colorate e i pastelli predefiniti.
+OWN-WORLD: iPhone = lista inset di iOS (grigio di sistema, celle bianche, un solo blu tinta, verde e rosso di stato) nelle varianti
+«aumenta contrasto»; Android = Material 3 delle app Google (barra in alto, liste, FAB esteso, blu Google). Font di sistema, Dynamic Type.
+STORY: apre il foglio, vede subito chi viene dopo e quando; tocca Naviga / Chiama / Sto arrivando; dal cliente segna OK o KO;
+a fine giornata manda il loro foglio compilato.
+FIRST VIEWPORT: titolo grande «Oggi» con la data, poi la cella «Prossimo» (ora, comune, cliente, note, tre azioni), poi «Poi».
+Vuoto: tre passi numerati e un tasto pieno «Apri il foglio dei turni».
+FORM: il canone del settore fatto per bene (scelto da Federico: «normale»), modelli WhatsApp + Google Maps + app di sistema.
+-->
 </head>
 <body>
-<header class="testa">
-  <div>
-    <h1 id="giorno">Il tuo giro</h1>
-    <p id="conteggio" class="sotto"></p>
-  </div>
-  <label class="apri">Apri foglio<input id="file" type="file" accept="application/pdf,.pdf" hidden></label>
-</header>
-<main id="main"></main>
+<div id="app"></div>
+<input id="file" type="file" accept="application/pdf,.pdf" hidden>
 <script type="module" src="app.js"></script>
 </body>
 </html>
