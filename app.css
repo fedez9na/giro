@@ -59,6 +59,7 @@ button { cursor: pointer; }
 [data-os="android"] .gruppo > h2.forte { font-size: 1.375rem; font-weight: 400; color: var(--testo); }
 .lista { background: var(--cella); border-radius: var(--raggio); overflow: hidden; }
 .piede { font-size: .8125rem; color: var(--testo-2); padding: 6px 16px 0; }
+.piede a { color: inherit; }
 
 .riga { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 11px 16px; background: none; border: 0;
   text-align: left; position: relative; color: var(--testo); text-decoration: none; }
@@ -128,6 +129,24 @@ label.riga { cursor: text; }
 [data-os="android"] .avviso-basso { border-radius: 4px; background: #303030; } /* Material: inverse surface */
 [data-os="android"] .avviso-basso button { min-height: 48px; color: #a8c7fa; font-weight: 500; }
 .testata .azioni { padding-top: 14px; }
+
+/* ---------- prima di partire, prova del foglio ---------- */
+.riga.stretto { align-items: flex-start; }
+.riga.stretto svg { flex: 0 0 22px; width: 22px; height: 22px; color: #b25000; margin-top: 2px; }
+@media (prefers-color-scheme: dark) { .riga.stretto svg { color: #ffb340; } }
+/* meteo: arancio solo quando c'è qualcosa da guardare (pioggia, raffiche, temporale, allerta) */
+.riga.meteo { align-items: flex-start; }
+.riga.meteo svg { flex: 0 0 22px; width: 22px; height: 22px; color: var(--testo-2); margin-top: 2px; }
+.riga.meteo.attenzione svg, .riga .allerta, .meteo-tag { color: #b25000; }
+.riga .allerta, .meteo-tag { font-weight: 600; }
+/* l'etichetta arriva dalla rete dopo il disegno: la riga dell'orario non va mai a capo, così i tasti sotto non si spostano */
+.prossimo .quando { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.quando .meteo-tag:not(:empty)::before { content: ' · '; color: var(--testo-2); font-weight: 400; }
+.corpo > .meteo-tag { display: block; font-size: .9375rem; } /* nella lista: una riga sua, come la nota */
+@media (prefers-color-scheme: dark) { .riga.meteo.attenzione svg, .riga .allerta, .meteo-tag { color: #ffb340; } }
+.prova-foglio { position: relative; min-height: 120px; background: #fff; border-radius: var(--raggio); overflow: hidden; touch-action: pinch-zoom; }
+.prova-foglio canvas { display: block; }
+.evidenzia { position: absolute; background: rgba(255, 204, 0, .38); outline: 2px solid #e0a800; outline-offset: -1px; pointer-events: none; }
 
 /* ---------- vuoto e avvisi ---------- */
 .passi { counter-reset: passo; }

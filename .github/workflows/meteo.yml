@@ -1,0 +1,90 @@
+# Lavoro giornaliero del meteo per il giro di Riccardo.
+# Legge AROME (Météo-France, Licence Ouverte 2.0), ICON-2I (ItaliaMeteo-ARPAE, CC BY 4.0) e il bollettino della Protezione
+# Civile (CC BY 4.0), scrive meteo.json e pubblica il sito (i file dell'app + meteo.json) su GitHub Pages.
+# Nessuna chiave e nessun segreto: solo il gettone temporaneo del lavoro, per leggere il bollettino senza limiti stretti.
+# Tre lavori separati: quello che installa pacchetti Python non può pubblicare né toccare i file dell'app; al massimo cambia
+# meteo.json, che l'app legge come dati e scrive come testo. Le azioni sono fissate al commit (il tag si può spostare).
+# Per attivarlo: Pages con sorgente «GitHub Actions», poi questo file in .github/workflows/ del repository del sito.
+# Attenzione: GitHub spegne i lavori a orario di un repository pubblico dopo 60 giorni senza modifiche (si riaccende a mano).
+name: meteo
+
+on:
+  schedule:
+    # UTC (in Italia +1 d'inverno, +2 d'estate). Ogni giro arriva dopo una corsa AROME completa (escono 2-4 ore dopo);
+    # 04:20 prende ICON-2I delle 00, 16:20 quello delle 12 e il bollettino della Protezione Civile (uscito fra 12:18 e 15:52 UTC)
+    - cron: '20 4,7,10,16,22 * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  meteo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: pip install eccodes==2.50.0 numpy==2.5.4 requests==2.34.2
+      - name: Meteo dei comuni della zona
+        # parte dal meteo.json già pubblicato: se le fonti non rispondono resta quello (l'app lo scarta dopo 12 ore),
+        # e ICON-2I, che cambia due volte al giorno, non si riscarica. Senza nessun meteo.json il telefono usa Bright Sky
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          curl -fsS --max-time 60 "https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/meteo.json" -o meteo.json || rm -f meteo.json
+          timeout 600 python strumenti/meteo_giornaliero.py meteo.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: meteo
+          path: meteo.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+  sito:
+    needs: meteo
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: meteo
+          path: _meteo
+      - name: Il sito = i file dell'app + meteo.json (il lavoro e i suoi strumenti restano fuori)
+        run: |
+          set -o pipefail
+          mkdir _site
+          git ls-files -z | grep -zv -E '^(\.github|strumenti)/|^meteo\.json$' | xargs -0 -I{} cp --parents {} _site/
+          if [ -f _meteo/meteo.json ]; then cp _meteo/meteo.json _site/meteo.json; fi
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  pubblica:
+    needs: sito
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.pubblica.outputs.page_url }}
+    steps:
+      - id: pubblica
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

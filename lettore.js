@@ -130,5 +130,6 @@ export function leggiFoglio(g, oggi = new Date()) {
   const avvisi = [];
   if (!data) avvisi.push('intestazione');
   else if (!data.anno) avvisi.push('data-incoerente');
-  return { tecnico, data, interventi, avvisi };
+  const tabella = { x0: g.v[0].a, y0: g.h[0].a, x1: g.v.at(-1).b, y1: g.h.at(-1).b };
+  return { tecnico, data, interventi, avvisi, tabella };
 }

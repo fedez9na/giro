@@ -5,7 +5,7 @@ const ESITO_VUOTO = { stato: null, motivoKo: '', euroExtra: '' };
 
 export function nuovaGiornata(foglio) {
   return {
-    iso: foglio.data?.iso ?? null, tecnico: foglio.tecnico, data: foglio.data,
+    iso: foglio.data?.iso ?? null, tecnico: foglio.tecnico, data: foglio.data, tabella: foglio.tabella,
     interventi: foglio.interventi.map(i => ({ ...structuredClone(i), esito: { ...ESITO_VUOTO }, aggiunte: {}, tolto: false })),
     cambi: [],
   };
@@ -33,7 +33,7 @@ export function unisci(giornata, foglio) {
     if (!v.tolto) cambi.push({ tipo: 'tolto', n: v.n, id: v.id });
     interventi.push({ ...structuredClone(v), tolto: true });
   }
-  return { ...giornata, tecnico: foglio.tecnico, data: foglio.data, interventi, cambi };
+  return { ...giornata, tecnico: foglio.tecnico, data: foglio.data, tabella: foglio.tabella, interventi, cambi };
 }
 
 export function segna(giornata, id, esito) {
