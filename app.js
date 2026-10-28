@@ -7,7 +7,7 @@ import { compilaPdf } from './compila.js';
 import { naviga, chiama, stoArrivando, testoArrivo } from './link.js';
 import { puntoStretto, quantoManca, comuneVicino, minutiGuida, durata } from './margini.js';
 import { creaIcs } from './calendario.js';
-import { mostraParete, prepara, salvaCopertine, leggiCodice } from './parete.js';
+import { mostraParete, prepara, salvaCopertine, leggiCodice, leggiCollegamento, scaricaParete } from './parete.js';
 import { hm, nomeComune, tipo, notePer } from './testi.js';
 import { chiave, meteoDelLavoro, etichetta, riassunto, leggiMeteo, leggiAllerte, leggiMeteoSito, daSito, sitoValido, DOPO, cieloDelLavoro, alBuio } from './meteo.js';
 
@@ -113,13 +113,28 @@ function scegliCopertine() {
   campo.click();
 }
 
-// La parete composta sul poster shop: là «Pubblica su Giro» copia un codice, qui si incolla
+// La parete composta sul poster shop. Una volta sola: si incolla il codice di collegamento (giro-collega:…) e da lì
+// ogni «Pubblica su Giro» arriva da solo. Vale ancora anche il codice della parete intera (giro-parete:…).
+const COLLEGAMENTO = 'giro:poster-shop';
+const testoCollega = () => (leggiLS(COLLEGAMENTO) ? 'Poster shop collegato: incolla un codice nuovo' : 'Collega il poster shop');
 async function incollaParete() {
   let testo = '';
   try { testo = await navigator.clipboard.readText(); } catch { /* permesso negato: vale come appunti vuoti */ }
+  const id = leggiCollegamento(testo);
+  if (id) {
+    scriviLS(COLLEGAMENTO, id);
+    const scaricata = await scaricaParete(id);
+    if (scaricata) await salvaCopertine(scaricata).catch(() => {});
+    stato.avviso = scaricata
+      ? { testo: `Collegato al poster shop: ${scaricata.tessere.length} copertine. Ogni volta che pubblichi, la parete arriva da sola.` }
+      : { testo: 'Collegato al poster shop. Non c’è ancora una parete pubblicata: tocca «Pubblica su Giro» e arriva da sola.' };
+    disegna();
+    if (scaricata) (await mostraParete())?.prima('Così ti accoglie ogni mattina!', '');
+    return;
+  }
   const parete = leggiCodice(testo);
   if (!parete) {
-    stato.avviso = { errore: true, testo: 'Negli appunti non c’è una parete. Sul poster shop tocca «Pubblica su Giro», poi torna qui e riprova.' };
+    stato.avviso = { errore: true, testo: 'Negli appunti non c’è il codice. Sul poster shop tocca «Pubblica su Giro», poi «Copia il codice», e torna qui.' };
     return disegna();
   }
   try {
@@ -247,6 +262,10 @@ function schermoVuoto() {
       passi.map((p, k) => h('div', { class: 'riga' }, h('span', { class: 'numero' }, String(k + 1)), h('span', { class: 'corpo' }, p))))),
     h('button', { type: 'button', class: 'tasto-pieno', onclick: apriFile }, 'Apri il foglio dei turni'),
     h('p', { class: 'piede' }, 'Il foglio e quello che segni restano solo in questo telefono.'),
+    // si collega anche prima del primo foglio
+    h('section', { class: 'gruppo' }, h('h2', {}, 'La tua parete d’ingresso'), h('div', { class: 'lista' },
+      h('button', { type: 'button', class: 'riga azione-riga', onclick: incollaParete }, testoCollega()),
+      h('button', { type: 'button', class: 'riga azione-riga', onclick: scegliCopertine }, 'Oppure scegli le copertine dalle foto'))),
     !installata && !ANDROID && h('p', { class: 'piede' },
       'Prima volta: Condividi → «Aggiungi alla schermata Home». Senza, Safari cancella i dati dopo 7 giorni.'),
   ];
@@ -303,7 +322,7 @@ function schermoGiornata() {
       h('div', { class: 'lista' },
         prossimo && h('button', { type: 'button', class: 'riga azione-riga', onclick: () => vai('#/prova') }, 'Manda il foglio all’ufficio'),
         h('button', { type: 'button', class: 'riga azione-riga', onclick: scegliCopertine }, 'La tua parete d’ingresso: scegli le copertine'),
-        h('button', { type: 'button', class: 'riga azione-riga', onclick: incollaParete }, 'Incolla la parete dal poster shop'),
+        h('button', { type: 'button', class: 'riga azione-riga', onclick: incollaParete }, testoCollega()),
         h('label', { class: 'riga' }, h('span', { class: 'etichetta' }, 'Nei messaggi sei'),
           h('input', { value: imp.chiSono, placeholder: 'il tuo nome', autocomplete: 'given-name',
             oninput: e => scriviLS('giro:impostazioni', { ...impostazioni(), chiSono: e.target.value.trim() }) }))),
@@ -675,7 +694,19 @@ document.getElementById('file').addEventListener('change', async e => {
 addEventListener('hashchange', () => { disegna(); scrollTo(0, 0); });
 addEventListener('online', () => { if (document.querySelector('[data-meteo]')) aggiornaMeteo(); });
 
+// la parete pubblicata dal poster shop: si scarica in silenzio, al massimo ogni mezz'ora, e vale dal prossimo foglio
+let pareteControllata = 0;
+async function aggiornaDalNegozio() {
+  const id = leggiLS(COLLEGAMENTO);
+  if (!id || !navigator.onLine || Date.now() - pareteControllata < 30 * 60e3) return;
+  pareteControllata = Date.now();
+  const p = await scaricaParete(id);
+  if (p) await salvaCopertine(p).catch(() => {});
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) aggiornaDalNegozio(); });
+
 pulisci();
+aggiornaDalNegozio();
 stato.iso = scegliGiorno();
 stato.giorno = stato.iso ? leggiLS(CHIAVE + stato.iso) : null;
 disegna();

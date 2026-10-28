@@ -27,12 +27,32 @@ export function leggiCodice(testo) {
   const m = /^\s*giro-parete:([A-Za-z0-9_-]+)={0,2}\s*$/.exec(testo ?? '');
   let j = null;
   try { j = m && JSON.parse(atob(m[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch { return null; }
+  return validaParete(j);
+}
+
+// la stessa forma arriva dal codice incollato e dal poster shop: si controlla sempre qui
+function validaParete(j) {
   const intero = v => Number.isInteger(v) && Math.abs(v) <= 40;
   const tessere = (Array.isArray(j?.tessere) ? j.tessere : [])
-    .filter(t => Array.isArray(t) && IMMAGINE.test(t[0]) && !t[0].includes('..') && intero(t[1]) && intero(t[2])).slice(0, 60)
+    .filter(t => Array.isArray(t) && typeof t[0] === 'string' && t[0].length <= 300 && IMMAGINE.test(t[0]) && !t[0].includes('..') && intero(t[1]) && intero(t[2])).slice(0, 60)
     .map(([url, col, row]) => ({ url, col, row }));
   if (j?.v !== 1 || !tessere.length) return null;
   return { colore: /^#[0-9a-f]{6}$/i.test(j.colore) ? j.colore : null, tessere };
+}
+
+// «Una volta e basta»: il codice di collegamento del poster shop si mette in Giro una volta sola; poi ogni «Pubblica su
+// Giro» si scarica da qui. Al poster shop va solo il codice (16 caratteri a caso): nessun dato del foglio, nessuna posizione.
+export const NEGOZIO = 'https://immersive-poster-shop.vercel.app/api/giro';
+export const leggiCollegamento = testo => /^\s*giro-collega:([a-z0-9]{16})\s*$/.exec(testo ?? '')?.[1] ?? null;
+// null se non c'è niente di pubblicato, se la rete non va o se arriva qualcosa di storto: la parete salvata resta
+export async function scaricaParete(id, f = fetch) {
+  if (!/^[a-z0-9]{16}$/.test(id ?? '')) return null;
+  try {
+    const r = await f(`${NEGOZIO}?id=${id}`, { cache: 'no-store', signal: AbortSignal.timeout?.(10000) });
+    return r.ok ? validaParete(await r.json()) : null;
+  } catch {
+    return null;
+  }
 }
 
 // a 900 px di altezza: 25 copertine stanno in pochi MB
