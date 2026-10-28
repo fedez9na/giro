@@ -59,7 +59,8 @@ function schermoAccesso(messaggio) {
       tasto.disabled = true; tasto.textContent = 'Entro…'; esito.textContent = '';
       try { st.io = await entra(email.value, pw.value); await avvia(); } catch (x) { esito.textContent = x.message; tasto.disabled = false; tasto.textContent = 'Entra'; }
     } },
-    h('label', { for: 'acc-email' }, 'Email'), email, h('label', { for: 'acc-pw' }, 'Password'), pw, esito, tasto)));
+    h('label', { for: 'acc-email' }, 'Email'), email, h('label', { for: 'acc-pw' }, 'Password'), pw, esito, tasto),
+    h('a', { class: 'link', href: './#/scelta' }, 'Sei un tecnico? Torna a Giro')));
   email.focus();
 }
 

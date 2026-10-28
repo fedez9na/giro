@@ -278,7 +278,7 @@ function schermoVuoto() {
     // con l'ufficio collegato il giorno arriva da solo, senza WhatsApp né File
     h('section', { class: 'gruppo' }, h('h2', {}, 'L’ufficio'), h('div', { class: 'lista' },
       h('button', { type: 'button', class: 'riga azione-riga', onclick: () => vai('#/ufficio') },
-        ufficio.collegato() ? 'Collegato all’ufficio: aspetto i turni' : 'Collegati all’ufficio'))),
+        testoUfficio('Collegato all’ufficio: aspetto i turni')))),
     // si collega anche prima del primo foglio
     h('section', { class: 'gruppo' }, h('h2', {}, 'La tua parete d’ingresso'), h('div', { class: 'lista' },
       h('button', { type: 'button', class: 'riga azione-riga', onclick: incollaParete }, testoCollega()),
@@ -350,7 +350,7 @@ function schermoGiornata() {
     h('section', { class: 'gruppo' }, h('h2', {}, 'Fine giornata'),
       h('div', { class: 'lista' },
         prossimo && !online && h('button', { type: 'button', class: 'riga azione-riga', onclick: () => vai('#/prova') }, 'Manda il foglio all’ufficio'),
-        h('button', { type: 'button', class: 'riga azione-riga', onclick: () => vai('#/ufficio') }, ufficio.collegato() ? 'L’ufficio: collegato' : 'Collegati all’ufficio'),
+        h('button', { type: 'button', class: 'riga azione-riga', onclick: () => vai('#/ufficio') }, testoUfficio('L’ufficio: collegato')),
         h('button', { type: 'button', class: 'riga azione-riga', onclick: scegliCopertine }, 'La tua parete d’ingresso: scegli le copertine'),
         h('button', { type: 'button', class: 'riga azione-riga', onclick: incollaParete }, testoCollega()),
         h('label', { class: 'riga' }, h('span', { class: 'etichetta' }, 'Nei messaggi sei'),
@@ -715,8 +715,8 @@ function disegna() {
   const i = m && stato.giorno?.giornata.interventi[+m[1]];
   const prova = location.hash === '#/prova' && stato.giorno && !stato.giorno.online; // un giorno dall'ufficio non ha il PDF
   const casa = location.hash === '#/casa';
-  const conUfficio = location.hash === '#/ufficio';
-  const schermo = casa ? schermoCasa() : conUfficio ? schermoUfficio() : i ? schermoScheda(i, !!m[2]) : prova ? [] : stato.giorno ? schermoGiornata() : schermoVuoto();
+  const conUfficio = location.hash === '#/ufficio' || location.hash === '#/scelta';
+  const schermo = casa ? schermoCasa() : location.hash === '#/scelta' ? schermoScelta() : conUfficio ? schermoUfficio() : i ? schermoScheda(i, !!m[2]) : prova ? [] : stato.giorno ? schermoGiornata() : schermoVuoto();
   // la prova misura la larghezza del riquadro: si costruisce dopo che lo schermo è nella pagina
   const contenitore = h('div', { class: 'schermo' }, schermo);
   app.replaceChildren(contenitore);
@@ -753,6 +753,7 @@ async function collegaUfficio() {
   if (!ufficio.collegato()) return;
   try {
     uff.p = await ufficio.io();
+    if (uff.p?.ruolo === 'gestore') { uff.gestore = uff.p; uff.p = null; return; } // il browser dell'ufficio: qui niente turni da ricevere
     if (!uff.p) {
       if (!navigator.onLine) return; // senza rete non si sa: si riprova quando torna
       uff.rifare = true;
@@ -859,9 +860,34 @@ function testoEsiti() {
 }
 function riempiEsiti() { for (const el of document.querySelectorAll('[data-esiti]')) if (stato.giorno?.online) el.textContent = testoEsiti(); }
 
+// Le tre strade, all'apertura finché non se n'è presa una (Federico, 28/10): l'ufficio, il tecnico collegato, il foglio senza account.
+const MODO = 'giro:modo'; // 'tecnico' | 'libero': si sceglie una volta, «Esci dall'ufficio» la rimette
+const testoUfficio = collegato => (ufficio.ruoloCollegato() === 'gestore' ? 'Pagina dell’ufficio' : ufficio.collegato() ? collegato : 'Collegati all’ufficio');
+function schermoScelta() {
+  const strada = (titolo, sotto, fn) => h('button', { type: 'button', class: 'riga azione-riga scelta', onclick: fn },
+    h('span', { class: 'corpo' }, h('div', { class: 'principale' }, titolo), h('div', { class: 'secondaria' }, sotto)), h('span', { class: 'chevron' }, icona('chevron', false)));
+  return [h('div', { class: 'barra' }),
+    h('div', { class: 'titolo-grande' }, h('h1', {}, 'Giro'), h('p', {}, 'Come entri?')),
+    h('section', { class: 'gruppo' }, h('div', { class: 'lista' },
+      strada('Entra come gestore', 'Per l’ufficio: scrivi i turni dei tecnici e li pubblichi sul loro telefono', () => { location.href = 'gestore.html'; }),
+      strada('Entra come tecnico', 'Con email e password dell’ufficio: i turni arrivano da soli', () => vai('#/ufficio')),
+      strada('Carica il foglio dei turni', 'Senza account: apri il PDF che ti mandano, come sempre', async () => {
+        scriviLS(MODO, 'libero');
+        apriFile(); // subito, nel tocco: iPhone apre la scelta del file solo da un tocco
+        vai(!stato.giorno && (await leggiCopertine()).length !== 0 ? '#/casa' : '#/'); // stessa regola dell'avvio: la parete del poster shop è un oggetto, non un elenco
+      }))),
+    h('p', { class: 'piede' }, 'La scelta resta in questo telefono. Puoi collegarti all’ufficio anche dopo, da «L’ufficio».')];
+}
+
 function schermoUfficio() {
-  const barra = h('div', { class: 'barra' }, h('button', { type: 'button', class: 'indietro', 'aria-label': 'Indietro', onclick: () => vai('#/') },
-    icona('indietro', false), h('span', { class: 'etichetta-indietro' }, stato.giorno ? titoloGiorno() : 'Il tuo giro')));
+  const sceltoGia = uff.p || leggiLS(MODO); // chi non ha ancora scelto torna alle tre scelte
+  const barra = h('div', { class: 'barra' }, h('button', { type: 'button', class: 'indietro', 'aria-label': 'Indietro', onclick: () => vai(sceltoGia ? '#/' : '#/scelta') },
+    icona('indietro', false), h('span', { class: 'etichetta-indietro' }, !sceltoGia ? 'Scelte' : stato.giorno ? titoloGiorno() : 'Il tuo giro')));
+  if (uff.gestore) {
+    return [barra, h('div', { class: 'titolo-grande' }, h('h1', {}, 'L’ufficio'), h('p', {}, `Questo browser è collegato come ufficio (${uff.gestore.nome})`)),
+      h('a', { class: 'tasto-pieno', href: 'gestore.html' }, 'Apri la pagina dell’ufficio'),
+      h('p', { class: 'piede' }, 'Per entrare come tecnico usa il suo telefono, oppure esci prima dall’ufficio nella sua pagina.')];
+  }
   if (!uff.p) {
     const email = h('input', { type: 'email', autocomplete: 'username', autocapitalize: 'none', inputmode: 'email', placeholder: 'quella che ti ha dato l’ufficio' });
     const pw = h('input', { type: 'password', autocomplete: 'current-password', placeholder: 'password' });
@@ -873,7 +899,10 @@ function schermoUfficio() {
         e.preventDefault();
         entra.disabled = true; entra.textContent = 'Mi collego…'; errore.textContent = '';
         try {
-          uff.p = await ufficio.entra(email.value, pw.value);
+          const p = await ufficio.entra(email.value, pw.value);
+          if (p.ruolo === 'gestore') { location.href = 'gestore.html'; return; } // ha messo l'accesso dell'ufficio: la sua pagina è quella
+          uff.p = p;
+          scriviLS(MODO, 'tecnico');
           uff.rifare = false; uff.gestori = null;
           stato.avviso = { testo: 'Collegato. I turni arrivano da soli; se attivi le notifiche ti avviso quando l’ufficio li pubblica.' };
           uff.canale ??= await ufficio.ascolta(`turni:${uff.p.id}`, 'turni', async r => riceviTurni(await ufficio.apriTurni(uff.p, [r])));
@@ -907,6 +936,7 @@ function schermoUfficio() {
       h('button', { type: 'button', class: 'riga azione-riga rosso', onclick: async () => {
         try { await uff.canale?.unsubscribe(); } catch { /* senza rete: il canale si chiude da solo */ }
         await ufficio.esci(uff.p);
+        localStorage.removeItem(MODO); // alla prossima apertura si torna alle tre scelte
         Object.assign(uff, { p: null, canale: null, gestori: null, notifiche: null });
         stato.avviso = { testo: 'Uscito dall’ufficio. I giorni già arrivati restano in questo telefono.' };
         disegna();
@@ -944,6 +974,11 @@ aggiornaDalNegozio();
 stato.iso = scegliGiorno();
 stato.giorno = stato.iso ? leggiLS(CHIAVE + stato.iso) : null;
 // senza foglio si entra dalla sua parete, se ne ha una; le istruzioni restano a un tocco («Come si apre il foglio»)
+// all'apertura: il browser dell'ufficio va alla sua pagina; chi non ha ancora scelto una strada vede le tre scelte
+if (!location.hash && !location.search) {
+  if (ufficio.ruoloCollegato() === 'gestore') { location.replace('gestore.html'); await new Promise(() => {}); } // la pagina sta cambiando: qui si ferma
+  if (!ufficio.collegato() && !leggiLS(MODO)) history.replaceState(null, '', '#/scelta');
+}
 if (!stato.giorno && !location.hash && (await leggiCopertine()).length !== 0) history.replaceState(null, '', '#/casa');
 disegna();
 const giornoChiesto = new URLSearchParams(location.search).get('giorno'); // da una notifica toccata ad app chiusa

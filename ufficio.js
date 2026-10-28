@@ -45,6 +45,7 @@ const togliChiave = id => idb('readwrite', s => s.delete(id)).catch(() => {});
 
 const leggiMemoria = () => { try { return JSON.parse(localStorage.getItem(MEMORIA)); } catch { return null; } };
 export const collegato = () => !!leggiMemoria(); // senza caricare niente: chi non si è mai collegato non scarica la libreria
+export const ruoloCollegato = () => leggiMemoria()?.ruolo ?? null; // 'gestore' | 'dipendente' | null
 const scriviMemoria = p => { try { localStorage.setItem(MEMORIA, JSON.stringify(p)); } catch { /* pieno: si rilegge dal server */ } };
 
 const MESSAGGI = { 'Invalid login credentials': 'Email o password non giuste' };

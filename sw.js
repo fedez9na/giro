@@ -1,12 +1,18 @@
 // Senza rete: i file dell'app stanno in cache e si servono da lì. Il PDF condiviso (Android) arriva qui come POST.
-const VERSIONE = 'giro-7';
+const VERSIONE = 'giro-8';
 const FILE = ['./', 'index.html', 'app.css', 'app.js', 'lettore.js', 'giornata.js', 'compila.js', 'link.js', 'margini.js', 'calendario.js', 'testi.js', 'meteo.js', 'parete.js', 'turni.js', 'cifra.js', 'ufficio.js', 'vendor/supabase.js', 'comuni.json', 'strade.json', 'vendor/Bangers-Regular.ttf',
   'manifest.webmanifest', 'icona.svg', 'icona-192.png', 'icona-512.png',
   'vendor/pdf.min.mjs', 'vendor/pdf.worker.min.mjs', 'vendor/pdf-lib.esm.min.js'];
 
-// cache: 'reload' = dal server, non dalla memoria del browser (GitHub Pages la tiene 10 minuti: si installerebbero file vecchi)
+// cache: 'reload' = dal server, non dalla memoria del browser. E ?v=VERSIONE: il CDN di Pages tiene i file 10 minuti dopo un rilascio,
+// e il 28/10 un'installazione in quei minuti ha preso un lettore.js vecchio accanto a un gestore.js nuovo (pagina che non partiva).
+// Un indirizzo mai chiesto prima il CDN non ce l'ha: va a prenderlo nuovo. Si salva sotto il nome semplice.
 self.addEventListener('install', e => e.waitUntil(caches.open(VERSIONE)
-  .then(c => c.addAll(FILE.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting())));
+  .then(c => Promise.all(FILE.map(async f => {
+    const r = await fetch(new Request(`${f}?v=${VERSIONE}`, { cache: 'reload' }));
+    if (!r.ok) throw new Error(`${f}: ${r.status}`); // come addAll: o tutti o nessuno, si riprova alla prossima apertura
+    return c.put(f, r);
+  }))).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(
   caches.keys().then(k => Promise.all(k.filter(n => n !== VERSIONE && n !== 'condivisi' && n !== 'parete').map(n => caches.delete(n)))).then(() => self.clients.claim())));
 
