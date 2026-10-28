@@ -1,0 +1,51 @@
+{
+ "larghezza": 720,
+ "altezza": 1656,
+ "codifica": {
+  "K": 0.002,
+  "VMAX": {
+   "base": 256.0,
+   "led": 256.0,
+   "striscia": 20.0,
+   "insegna": 128.0
+  },
+  "nota": "v = K * (2^(e * log2(1 + VMAX/K)) - 1), VMAX per lastra"
+ },
+ "file": {
+  "base.webp": 93882,
+  "led.webp": 162268,
+  "led0.webp": 145486,
+  "led1.webp": 171492,
+  "striscia.webp": 16614,
+  "insegna.webp": 12580,
+  "muro.webp": 3924,
+  "carta.webp": 6050
+ },
+ "byte_totali_sempre": 599716,
+ "angoli_carta_px720": [
+  [
+   108.72,
+   931.26
+  ],
+  [
+   611.27,
+   931.25
+  ],
+  [
+   684.01,
+   1256.89
+  ],
+  [
+   36.0,
+   1256.87
+  ]
+ ],
+ "render": {
+  "secondi": 535.3,
+  "campioni": 256,
+  "larghezza": 720,
+  "altezza": 1656,
+  "cpu": "Intel Core i7-13700H (CPU, 20 thread)",
+  "blender": "5.1.2"
+ }
+}

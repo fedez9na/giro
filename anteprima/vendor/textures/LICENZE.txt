@@ -1,0 +1,12 @@
+Texture e luce della stanza: tutte CC0 (pubblico dominio), scaricate il 28/10/2026, ridotte per il telefono.
+
+tavolo-colore.jpg     1024 px  Poly Haven "Wood Table 001" (diff)      https://polyhaven.com/a/wood_table_001        CC0
+tavolo-normali.jpg     512 px  Poly Haven "Wood Table 001" (nor_gl)    https://polyhaven.com/a/wood_table_001        CC0
+tavolo-rugosita.jpg    512 px  Poly Haven "Wood Table 001" (rough)     https://polyhaven.com/a/wood_table_001        CC0
+muro-colore.jpg        512 px  Poly Haven "Painted Plaster Wall" (diff) https://polyhaven.com/a/painted_plaster_wall CC0
+muro-normali.jpg       512 px  Poly Haven "Painted Plaster Wall" (nor_gl) https://polyhaven.com/a/painted_plaster_wall CC0
+carta-normali.jpg      512 px  ambientCG "Paper001" (NormalGL)          https://ambientcg.com/view?id=Paper001         CC0
+stanza-512.hdr     512x256 px  Poly Haven "Small Empty Room 3" (1k hdr, ridotto con ../../riduci_hdr.py) https://polyhaven.com/a/small_empty_room_3 CC0
+
+Licenza CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/ (Poly Haven: https://polyhaven.com/license ; ambientCG: https://ambientcg.com/license)
+I moduli in ../addons/ sono di three.js r185 (examples/jsm, licenza MIT: ../three-LICENSE.txt), presi da npm three@0.185.0.

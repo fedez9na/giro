@@ -1,0 +1,29 @@
+LA STANZA FOTOGRAFATA: FONTI E LICENZE (28/10/2026)
+
+Il telefono scarica solo le lastre in stanza/lastre/ (render nostri, fatti in locale con Blender) e stanza/camera.json.
+Modelli, texture e HDRI qui sotto servono solo a costruire il render (stanza/costruisci.py): stanno in stanza/asset/, ognuno nella sua
+cartella, scaricati da stanza/scarica.py dall'API ufficiale di Poly Haven. Licenza di tutti: CC0 1.0 (pubblico dominio, nessun obbligo
+di attribuzione; gli autori si scrivono lo stesso). Pagina della licenza: https://polyhaven.com/license
+
+| In stanza/asset/        | Cosa                                   | Autori                          | Pagina                                           | Peso su disco |
+|-------------------------|----------------------------------------|---------------------------------|--------------------------------------------------|---------------|
+| industrial_pipe_lamp    | lampada da tavolo a tubi, glTF 2k      | Mateusz Sadek                   | https://polyhaven.com/a/industrial_pipe_lamp     | 8,3 MB        |
+| measuring_tape_01       | metro a nastro 3 m, glTF 1k            | Kuutti Siitonen                 | https://polyhaven.com/a/measuring_tape_01        | 0,4 MB        |
+| potted_plant_04         | piantina grassa in vaso, glTF 1k       | James Ray Cock                  | https://polyhaven.com/a/potted_plant_04          | 2,0 MB        |
+| wood_table_001          | legno del tavolo, texture 2k (colore, normali, rugosità) | Dimitrios Savva, Rico Cilliers | https://polyhaven.com/a/wood_table_001 | 2,2 MB        |
+| painted_plaster_wall    | rilievo dell'intonaco del muro, texture 2k (normali, rugosità) | Amal Kumar          | https://polyhaven.com/a/painted_plaster_wall     | 5,4 MB        |
+| small_empty_room_3      | HDRI di una stanza (luce d'ambiente, molto bassa), 1k | Sergej Majboroda   | https://polyhaven.com/a/small_empty_room_3       | 1,5 MB        |
+
+Fatti qui, senza fonti esterne: il pennarello blu col suo tappo (Poly Haven non ha pennarelli: modellato in costruisci.py con cilindri
+e smussi), il cartone piuma con la carta, il profilo LED d'alluminio col diffusore, il muro, il tavolo, il soffitto e il muro di
+sinistra fuori quadro, le luci.
+
+Provati e scartati (non più in asset/): desk_lamp_arm_01 (la testa sta a 70 cm, finiva sopra i poster), stationery_supplies (nessun
+pennarello dentro).
+
+Programma: Blender 5.1.2 (GPL), usato solo in locale per rendere; niente di Blender va nella pagina.
+Le copertine dei poster NON sono nel render e non vanno a nessun servizio: la pagina le prende dal telefono (IndexedDB di Giro) e le
+compone sopra il muro vuoto. Le copertine di prova del disco si usano solo con ?copertine=locali (copertine-locali.js, che online non c'è).
+Le altre texture della pagina (tavolo della giornata, HDRI della giornata, carta) sono in vendor/textures/LICENZE.txt.
+
+Pesi delle lastre che il telefono scarica: in stanza/lastre/lastre.json (voce «file»; insegna.webp si scarica solo se l'insegna si accende).
