@@ -8,6 +8,17 @@ export const piu = (hhmm, m) => {
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 };
 
+// Quanto manca all'orario: prima dell'inizio «tra …»; dentro la finestra «chiude tra …»; dopo niente (magari è già al lavoro).
+export const durata = m => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`);
+export function quantoManca(orario, adesso) {
+  const da = min(orario.da);
+  let a = min(orario.a);
+  if (da == null) return '';
+  if (a != null && a < da) a = da >= 18 * 60 && a <= 6 * 60 ? a + 1440 : null;
+  if (adesso < da) return `tra ${durata(da - adesso)}`;
+  return a != null && adesso < a ? `chiude tra ${durata(a - adesso)}` : '';
+}
+
 // Il punto stretto: fra ciò che resta da fare, il passaggio col tempo più corto fra due inizi
 // (lavoro e strada insieme: non serve sapere la guida per dirlo, ed è un dato vero del foglio).
 export function puntoStretto(interventi) {
@@ -37,4 +48,24 @@ export function tratti(interventi, guida) {
       partiEntro: ok ? piu(dopo.orario.a ?? dopo.orario.da, -g) : null,
     };
   });
+}
+
+// Minuti in macchina. La posizione resta nel telefono: serve solo a trovare il comune dove si è (il centro più vicino;
+// oltre 8 km da ogni centro si è fuori zona e non si dà un numero). I minuti sono nella tabella strade.json:
+// da centro a centro del comune, senza traffico (OSRM su OpenStreetMap). 255 = nessun percorso.
+export function comuneVicino(tabella, chiavi, lat, lon, maxKm = 8) {
+  const c = Math.cos(lat * Math.PI / 180);
+  let meglio = null, km = Infinity;
+  for (const k of chiavi) {
+    const p = tabella[k];
+    const d = p ? Math.hypot(p[0] - lat, (p[1] - lon) * c) * 111.2 : Infinity;
+    if (d < km) { km = d; meglio = k; }
+  }
+  return km <= maxKm ? meglio : null;
+}
+
+export function minutiGuida(strade, da, a) {
+  const i = strade.comuni.indexOf(da), j = strade.comuni.indexOf(a);
+  const m = i < 0 || j < 0 ? 255 : strade.minuti[i * strade.comuni.length + j];
+  return m === 255 ? null : m;
 }

@@ -53,10 +53,10 @@ button { cursor: pointer; }
 
 /* ---------- liste raggruppate ---------- */
 .gruppo { margin: 0 16px 22px; }
-.gruppo > h2 { font-size: .8125rem; font-weight: 400; color: var(--testo-2); text-transform: none; padding: 0 16px 6px; }
-.gruppo > h2.forte { font-size: 1.25rem; font-weight: 700; color: var(--testo); padding: 0 4px 8px; }
-[data-os="android"] .gruppo > h2 { font-size: .875rem; font-weight: 500; color: var(--tinta); padding-left: 4px; }
-[data-os="android"] .gruppo > h2.forte { font-size: 1.375rem; font-weight: 400; color: var(--testo); }
+.gruppo h2 { font-size: .8125rem; font-weight: 400; color: var(--testo-2); text-transform: none; padding: 0 16px 6px; }
+.gruppo h2.forte { font-size: 1.25rem; font-weight: 700; color: var(--testo); padding: 0 4px 8px; }
+[data-os="android"] .gruppo h2 { font-size: .875rem; font-weight: 500; color: var(--tinta); padding-left: 4px; }
+[data-os="android"] .gruppo h2.forte { font-size: 1.375rem; font-weight: 400; color: var(--testo); }
 .lista { background: var(--cella); border-radius: var(--raggio); overflow: hidden; }
 .piede { font-size: .8125rem; color: var(--testo-2); padding: 6px 16px 0; }
 .piede a { color: inherit; }
@@ -92,6 +92,8 @@ button { cursor: pointer; }
 .azioni a, .azioni button { min-height: 64px; border: 0; border-radius: var(--raggio-tasto); background: var(--tinta-tenue); color: var(--tinta);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-decoration: none; font-size: .8125rem; font-weight: 600; padding: 8px 4px; text-align: center; line-height: 1.15; }
 .azioni svg { width: 24px; height: 24px; }
+/* i minuti in macchina sotto Naviga: riga riservata, alta uguale vuota o piena (arrivano dopo, G14) */
+.azioni .guida { display: block; max-width: 100%; min-height: 1.2em; font-size: .75rem; font-weight: 500; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-os="android"] .azioni a, [data-os="android"] .azioni button { border-radius: 16px; color: var(--su-tinta-tenue); }
 
 /* ---------- campi nelle celle ---------- */
@@ -141,7 +143,27 @@ label.riga { cursor: text; }
 .riga .allerta, .meteo-tag { font-weight: 600; }
 /* l'etichetta arriva dalla rete dopo il disegno: la riga dell'orario non va mai a capo, così i tasti sotto non si spostano */
 .prossimo .quando { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.quando .meteo-tag:not(:empty)::before { content: ' · '; color: var(--testo-2); font-weight: 400; }
+.quando .manca:not(:empty)::before { content: ' · '; color: var(--testo-2); font-weight: 400; }
+.quando .manca { font-weight: 400; color: var(--testo-2); }
+.testa { display: flex; align-items: baseline; justify-content: space-between; }
+.testa .visto { border: 0; background: none; color: var(--tinta); font: inherit; font-size: 1.0625rem; min-height: 44px; padding: 0 16px; margin: -12px 0 -6px; }
+[data-os="android"] .testa .visto { font-size: .875rem; font-weight: 500; }
+/* il cielo del lavoro: nella riga dell'orario del prossimo e sotto l'ora nella lista (posto riservato: arriva dopo, non sposta niente) */
+.cielo svg { width: 1.2em; height: 1.2em; vertical-align: -.25em; }
+.quando .cielo:not(:empty)::before { content: ' · '; color: var(--testo-2); font-weight: 400; }
+.prossimo .meteo-riga { min-height: 1.35em; font-size: .9375rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.riga .ora .cielo { display: block; height: 20px; margin-top: 2px; font-size: 1rem; }
+.cielo { color: var(--testo-2); }
+.cielo[data-tipo^="sole"] { color: #a35d00; }
+.cielo[data-tipo="pioggia"] { color: #1a66c9; }
+.cielo[data-tipo="temporale"] { color: #b25000; }
+.cielo[data-tipo="neve"] { color: #2b7ea6; }
+@media (prefers-color-scheme: dark) {
+  .cielo[data-tipo^="sole"] { color: #ffc840; }
+  .cielo[data-tipo="pioggia"] { color: #6aa9ff; }
+  .cielo[data-tipo="temporale"] { color: #ffb340; }
+  .cielo[data-tipo="neve"] { color: #8fd3ff; }
+}
 .corpo > .meteo-tag { display: block; font-size: .9375rem; } /* nella lista: una riga sua, come la nota */
 @media (prefers-color-scheme: dark) { .riga.meteo.attenzione svg, .riga .allerta, .meteo-tag { color: #ffb340; } }
 .prova-foglio { position: relative; min-height: 120px; background: #fff; border-radius: var(--raggio); overflow: hidden; touch-action: pinch-zoom; }
@@ -168,3 +190,31 @@ body:has(.avviso-basso) { padding-bottom: calc(84px + env(safe-area-inset-bottom
   @keyframes entra { from { opacity: .4; transform: translateX(16px); } }
 }
 @media (min-width: 640px) { #app { max-width: 600px; margin: 0 auto; } }
+
+/* ---------- la parete d'ingresso: il muro blu e la striscia LED della sua stanza ---------- */
+@font-face { font-family: Bangers; src: url(vendor/Bangers-Regular.ttf); font-display: swap; } /* OFL, vendor/Bangers-OFL.txt */
+.ingresso { position: fixed; inset: 0; z-index: 50; overflow: hidden; cursor: pointer; transition: opacity .25s;
+  background: radial-gradient(120% 70% at 50% 0%, #22378a, #17286a 55%, #0c1640); }
+.ingresso.via { opacity: 0; }
+.ingresso .led { position: absolute; top: env(safe-area-inset-top, 0px); left: 0; height: 5px; width: 0; border-radius: 3px; background: #8dff6c;
+  box-shadow: 0 0 10px 2px #8dff6c, 0 0 40px 6px rgba(141, 255, 108, .45); animation: led-legge 1.2s ease-out forwards; }
+.ingresso .led.fatto { width: 100%; animation: none; transition: width .3s ease-out; }
+@keyframes led-legge { to { width: 85%; } }
+.ingresso .muro { position: absolute; inset: calc(env(safe-area-inset-top, 0px) + 20px) 10px 50px; display: grid; gap: 8px; grid-auto-rows: minmax(0, 1fr); }
+.ingresso .copertina { width: 100%; height: 100%; object-fit: cover; border: 2px solid #f7f0de; box-shadow: 0 6px 14px rgba(0, 0, 0, .5);
+  transform: rotate(var(--r)); opacity: 0; animation: attacca .28s var(--t) cubic-bezier(.3, 1.4, .5, 1) forwards; }
+@keyframes attacca { from { opacity: 0; transform: rotate(calc(var(--r) * -4)) scale(1.35); } to { opacity: 1; transform: rotate(var(--r)); } }
+.ingresso .balloon { position: absolute; left: 50%; bottom: 16%; width: min(86vw, 340px); transform: translateX(-50%) scale(.6); opacity: 0;
+  background: #fff; color: #121212; border: 3px solid #121212; border-radius: 50% / 42%; padding: 22px 26px; text-align: center;
+  font: 26px/1.05 Bangers, Impact, sans-serif; letter-spacing: .5px; }
+.ingresso .balloon.su { animation: pop .35s cubic-bezier(.2, 1.6, .4, 1) forwards; }
+.ingresso .balloon small { display: block; font-size: 18px; color: #c62828; margin-top: 4px; }
+.ingresso .balloon::after { content: ''; position: absolute; left: 22%; bottom: -26px; border: 14px solid transparent; border-top: 26px solid #121212; border-bottom: 0; transform: skewX(-25deg); }
+.ingresso .balloon::before { content: ''; position: absolute; left: calc(22% + 4px); bottom: -19px; border: 10px solid transparent; border-top: 20px solid #fff; border-bottom: 0; transform: skewX(-25deg); z-index: 1; }
+@keyframes pop { to { opacity: 1; transform: translateX(-50%) scale(1); } }
+.ingresso .salta { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); text-align: center; font-size: .8125rem; color: rgba(255, 255, 255, .7); }
+@media (prefers-reduced-motion: reduce) {
+  .ingresso, .ingresso * { animation: none !important; transition: none !important; }
+  .ingresso .copertina { opacity: 1; }
+  .ingresso .balloon.su { opacity: 1; transform: translateX(-50%); }
+}

@@ -240,7 +240,8 @@ def icon2i(ore, punti, adesso=None, prima=None):
     saltate = []
     for corsa in corse:  # la più recente completa: una corsa appena uscita può avere file a metà
         # già letta dal giro prima, per le stesse ore: non si riscarica (MeteoHub chiede un uso misurato)
-        if prima and prima[0].get("corsa") == datetime.strptime(corsa, "%Y%m%d%H").strftime("%Y-%m-%dT%H:%MZ"):
+        # (solo se ha tutti i campi di oggi: un json di una versione vecchia senza nuvole si rilegge)
+        if prima and prima[0].get("corsa") == datetime.strptime(corsa, "%Y%m%d%H").strftime("%Y-%m-%dT%H:%MZ")                 and all("nuvole" in v for v in prima[1].values()) and set(punti) <= set(prima[1]):
             return {**prima[0], "saltate": saltate, "riusata": True}, prima[1]
         try:
             info, dati = _icon_corsa(corsa, ore, punti)
@@ -256,7 +257,7 @@ def _icon_corsa(corsa, ore, punti):
     # il passo 0 non si scarica: all'inizio della corsa non è caduto niente (e eccodes lo dà come «0m», in minuti)
     servono = {x for s in passi.values() if s >= 1 for x in (s - 1, s) if x >= 1}
     griglie, campi = {}, {}
-    for var in ("TOT_PREC", "VMAX_10M", "LPI"):
+    for var in ("TOT_PREC", "VMAX_10M", "LPI", "CLCT"):  # CLCT: nuvole in % del cielo, per l'icona
         nome = re.findall(r'href="([^"]+\.grib)"', prendi(f"{ICON}{corsa}/{var}/").text)[0]
         url = f"{ICON}{corsa}/{var}/{nome}"
         elenco = messaggi(url, max(servono) + 1)  # le intestazioni oltre l'ultimo passo che serve non si leggono
@@ -277,7 +278,9 @@ def _icon_corsa(corsa, ore, punti):
         out[k] = {"mm": [orarie([tp(passi[t] - 1), tp(passi[t])])[0] if passi[t] >= 1 else None for t in ore],
                   "raffica": [kmh(campi["VMAX_10M"].get(passi[t], {}).get(k)) if passi[t] >= 1 else None for t in ore],
                   "fulmini": [None if passi[t] < 1 or campi["LPI"].get(passi[t], {}).get(k) is None
-                              else int(campi["LPI"][passi[t]][k] >= LPI_TEMPORALE) for t in ore]}
+                              else int(campi["LPI"][passi[t]][k] >= LPI_TEMPORALE) for t in ore],
+                  "nuvole": [None if passi[t] < 1 or campi["CLCT"].get(passi[t], {}).get(k) is None
+                             else round(campi["CLCT"][passi[t]][k]) for t in ore]}
     return {"corsa": inizio.strftime("%Y-%m-%dT%H:%MZ"), "distanza_max_km": round(max(g.distanza_max_km for g in griglie.values()), 2)}, out
 
 

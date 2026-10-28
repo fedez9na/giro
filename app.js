@@ -5,10 +5,11 @@ import { estraiGeometria, leggiFoglio } from './lettore.js';
 import { nuovaGiornata, unisci, segna, aggiungi, ordinati } from './giornata.js';
 import { compilaPdf } from './compila.js';
 import { naviga, chiama, stoArrivando, testoArrivo } from './link.js';
-import { puntoStretto } from './margini.js';
+import { puntoStretto, quantoManca, comuneVicino, minutiGuida, durata } from './margini.js';
 import { creaIcs } from './calendario.js';
+import { mostraParete, prepara, salvaCopertine, leggiCodice } from './parete.js';
 import { hm, nomeComune, tipo, notePer } from './testi.js';
-import { chiave, meteoDelLavoro, etichetta, riassunto, leggiMeteo, leggiAllerte, leggiMeteoSito, daSito, sitoValido, DOPO } from './meteo.js';
+import { chiave, meteoDelLavoro, etichetta, riassunto, leggiMeteo, leggiAllerte, leggiMeteoSito, daSito, sitoValido, DOPO, cieloDelLavoro, alBuio } from './meteo.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs';
 // grammatica del telefono: Material su Android, iOS altrove; ?os=ios|android la forza (per le prove)
@@ -50,6 +51,16 @@ const impostazioni = () => leggiLS('giro:impostazioni') ?? { chiSono: '' };
 
 // ---------- aprire un foglio ----------
 async function apriBytes(bytes) {
+  const ingresso = await mostraParete().catch(() => null); // la sua parete mentre legge il foglio, se ha scelto le copertine
+  try {
+    await leggiEApri(bytes, ingresso);
+  } catch (e) {
+    ingresso?.chiudi(); // un guasto a metà non lascia la parete sullo schermo
+    throw e;
+  }
+}
+
+async function leggiEApri(bytes, ingresso) {
   let foglio;
   try {
     const doc = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
@@ -61,6 +72,7 @@ async function apriBytes(bytes) {
     stato.avviso = { errore: true, testo: foglio.errore ? MESSAGGI[foglio.errore] ?? 'Non riesco ad aprire questo file.'
       : foglio.avvisi.includes('data-incoerente') ? 'Sul foglio il giorno della settimana e la data non coincidono: controlla con l’ufficio.'
         : 'Non trovo la data nel foglio.' };
+    ingresso?.chiudi();
     return vai('#/');
   }
   const esistente = leggiLS(CHIAVE + foglio.data.iso);
@@ -70,6 +82,55 @@ async function apriBytes(bytes) {
   stato.avviso = esistente ? avvisoCambi(giornata) : null;
   salva();
   vai('#/');
+  const primo = ordinati(giornata).find(i => !i.esito.stato);
+  ingresso?.prima(primo ? `Prima tappa: ${nomeComune(primo.comune)}!` : 'Giornata già fatta!', primo?.orario.da ? `alle ${hm(primo.orario.da)}` : '');
+}
+
+// La parete d'ingresso: sceglie le copertine dalle sue foto; si salvano rimpicciolite, solo in questo telefono
+function scegliCopertine() {
+  document.getElementById('scegli-copertine')?.remove(); // quello di una scelta annullata
+  const campo = h('input', { id: 'scegli-copertine', type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: async () => {
+    const file = [...campo.files].slice(0, 40);
+    campo.remove();
+    if (!file.length) return;
+    try {
+      const copertine = [];
+      for (const f of file) { const b = await prepara(f).catch(() => null); if (b) copertine.push(b); } // una alla volta: memoria del telefono
+      if (!copertine.length) {
+        stato.avviso = { errore: true, testo: 'Non riesco ad aprire queste immagini. La parete di prima resta com’era.' };
+        return disegna();
+      }
+      await salvaCopertine(copertine);
+      stato.avviso = { testo: `Parete pronta: ${copertine.length} copertine, solo in questo telefono. La vedi ogni volta che apri il foglio del mattino.` };
+      disegna();
+      (await mostraParete())?.prima('Così ti accoglie ogni mattina!', '');
+    } catch {
+      stato.avviso = { errore: true, testo: 'Non riesco a salvare le copertine in questo telefono.' };
+      disegna();
+    }
+  } });
+  document.body.append(campo);
+  campo.click();
+}
+
+// La parete composta sul poster shop: là «Pubblica su Giro» copia un codice, qui si incolla
+async function incollaParete() {
+  let testo = '';
+  try { testo = await navigator.clipboard.readText(); } catch { /* permesso negato: vale come appunti vuoti */ }
+  const parete = leggiCodice(testo);
+  if (!parete) {
+    stato.avviso = { errore: true, testo: 'Negli appunti non c’è una parete. Sul poster shop tocca «Pubblica su Giro», poi torna qui e riprova.' };
+    return disegna();
+  }
+  try {
+    await salvaCopertine(parete);
+  } catch {
+    stato.avviso = { errore: true, testo: 'Non riesco a salvare la parete in questo telefono.' };
+    return disegna();
+  }
+  stato.avviso = { testo: `Parete del poster shop salvata: ${parete.tessere.length} copertine. Le immagini arrivano da Comic Vine, quindi serve la rete.` };
+  disegna();
+  (await mostraParete())?.prima('Così ti accoglie ogni mattina!', '');
 }
 
 function avvisoCambi(g) {
@@ -100,6 +161,16 @@ const ICONE = { // disegnate apposta, tutte con lo stesso tratto
   foglio: 'M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V8h4.5M8 13h8M8 17h6',
   info: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 7.5v7m0-10v.5',
   meteo: 'M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 17.6 8.5 4.75 4.75 0 0 1 17.25 18z',
+  // il cielo: icone Lucide 0.460.0 (ISC, vendor/lucide-LICENSE.txt)
+  sole: 'M8 12a4 4 0 1 0 8 0a4 4 0 1 0-8 0M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41',
+  luna: 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z',
+  'sole-nuvole': 'M12 2v2M4.93 4.93l1.41 1.41M20 12h2M19.07 4.93l-1.41 1.41M15.947 12.65a4 4 0 0 0-5.925-4.128M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z',
+  'luna-nuvole': 'M10.188 8.5A6 6 0 0 1 16 4a1 1 0 0 0 6 6 6 6 0 0 1-3 5.197M13 16a3 3 0 1 1 0 6H7a5 5 0 1 1 4.9-6Z',
+  nuvole: 'M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z',
+  pioggia: 'M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242M16 14v6M8 14v6M12 16v6',
+  temporale: 'M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.973M13 12l-3 5h4l-3 5',
+  neve: 'M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242M8 15h.01M8 19h.01M12 17h.01M12 21h.01M16 15h.01M16 19h.01',
+  nebbia: 'M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242M16 17H7M17 21H9',
 };
 function icona(nome, piena = nome === 'naviga' || nome === 'chiama' || nome === 'messaggio') {
   const s = document.createElementNS(SVG, 'svg');
@@ -145,7 +216,8 @@ function azioni(i) {
   } }, icona('chiama'), tel() ? 'Chiama' : 'Aggiungi numero');
   return h('div', { class: 'azioni' },
     h('a', { href: naviga({ comune: i.comune, via: i.aggiunte?.via }), target: '_blank', rel: 'noopener noreferrer',
-      onclick: e => { e.currentTarget.href = naviga({ comune: i.comune, via: attuale(id).aggiunte?.via }); } }, icona('naviga'), 'Naviga'),
+      onclick: e => { e.currentTarget.href = naviga({ comune: i.comune, via: attuale(id).aggiunte?.via }); } }, icona('naviga'), 'Naviga',
+      h('span', { class: 'guida', 'data-guida-i': String(indice(i)) })),
     chiamaTasto,
     h('a', { href: '#', target: '_blank', rel: 'noopener noreferrer', onclick: e => {
       const x = attuale(id);
@@ -197,7 +269,7 @@ function schermoGiornata() {
   const fatti = giro.filter(i => i.esito.stato);
   const dataTesto = data.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
   const riga = i => h('a', { class: i.esito.stato ? 'riga fatta' : 'riga', href: `#/i/${indice(i)}` },
-    h('span', { class: 'ora' }, hm(i.orario.da) || '—'),
+    h('span', { class: 'ora' }, hm(i.orario.da) || '—', !i.esito.stato && tagCielo(i)),
     h('span', { class: 'corpo' }, h('div', { class: 'principale' }, nomeComune(i.comune)),
       h('div', { class: 'secondaria' }, tipo(i.tipologia)), !i.esito.stato && tagMeteo(i), !i.esito.stato && notePer(i) && h('div', { class: 'nota' }, notePer(i))),
     i.esito.stato && h('span', { class: i.esito.stato === 'OK' ? 'esito-ok' : 'esito-ko' }, i.esito.stato),
@@ -209,14 +281,15 @@ function schermoGiornata() {
     h('div', { class: 'titolo-grande' }, h('h1', {}, titoloGiorno()),
       h('p', {}, `${dataTesto} · ${giro.length} interventi, ${fatti.length} fatti`)),
     stato.avviso && gruppoAvviso(),
-    prossimo && gruppoPrimaDiPartire(giro),
+    prossimo && !stato.giorno.primaVisto && gruppoPrimaDiPartire(giro, true),
     prossimo && h('section', { class: 'gruppo' }, h('h2', { class: 'forte' }, 'Prossimo'),
       h('div', { class: 'lista' }, h('div', { class: 'prossimo' },
-        h('div', { class: 'quando' }, quando(prossimo), tagMeteo(prossimo)),
+        h('div', { class: 'quando' }, quando(prossimo), tagCielo(prossimo), h('span', { class: 'manca', 'data-manca': String(indice(prossimo)) })),
         notePer(prossimo) && h('div', { class: 'nota' }, notePer(prossimo)),
         h('div', { class: 'dove' }, nomeComune(prossimo.comune)),
         h('div', { class: 'chi' }, nomeCliente(prossimo.cliente)),
         h('div', { class: 'cosa' }, tipo(prossimo.tipologia)),
+        h('div', { class: 'meteo-riga' }, tagMeteo(prossimo)),
         azioni(prossimo),
         h('button', { type: 'button', class: 'apri-scheda', onclick: () => vai(`#/i/${indice(prossimo)}`) }, 'Segna l’esito')))),
     prossimo && stato.iso >= isoDi(new Date()) && gruppoMeteo(),
@@ -225,15 +298,20 @@ function schermoGiornata() {
     !prossimo && h('button', { type: 'button', class: 'tasto-pieno', onclick: () => vai('#/prova') }, 'Manda il foglio all’ufficio'),
     poi.length > 0 && h('section', { class: 'gruppo' }, h('h2', {}, 'Poi'), h('div', { class: 'lista' }, poi.map(riga))),
     fatti.length > 0 && h('section', { class: 'gruppo' }, h('h2', {}, 'Fatti'), h('div', { class: 'lista' }, fatti.map(riga))),
+    prossimo && stato.giorno.primaVisto && gruppoPrimaDiPartire(giro, false),
     h('section', { class: 'gruppo' }, h('h2', {}, 'Fine giornata'),
       h('div', { class: 'lista' },
         prossimo && h('button', { type: 'button', class: 'riga azione-riga', onclick: () => vai('#/prova') }, 'Manda il foglio all’ufficio'),
+        h('button', { type: 'button', class: 'riga azione-riga', onclick: scegliCopertine }, 'La tua parete d’ingresso: scegli le copertine'),
+        h('button', { type: 'button', class: 'riga azione-riga', onclick: incollaParete }, 'Incolla la parete dal poster shop'),
         h('label', { class: 'riga' }, h('span', { class: 'etichetta' }, 'Nei messaggi sei'),
           h('input', { value: imp.chiSono, placeholder: 'il tuo nome', autocomplete: 'given-name',
             oninput: e => scriviLS('giro:impostazioni', { ...impostazioni(), chiSono: e.target.value.trim() }) }))),
       h('p', { class: 'piede' }, stato.giorno.inviato
         ? `Foglio preparato alle ${new Date(stato.giorno.inviato).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}. Nel foglio vanno solo esito, motivo KO ed euro extra.`
-        : `Nel foglio vanno solo esito, motivo KO ed euro extra. I dati restano in questo telefono e si cancellano dopo ${GIORNI_TENUTI} giorni.`)),
+        : `Nel foglio vanno solo esito, motivo KO ed euro extra. I dati restano in questo telefono e si cancellano dopo ${GIORNI_TENUTI} giorni.`),
+      h('p', { class: 'piede' }, 'Minuti sotto Naviga: dal centro del comune dove sei a quello del cliente, senza traffico. La posizione resta in questo telefono. Strade ',
+        h('a', { href: 'https://www.openstreetmap.org/copyright', target: '_blank', rel: 'noopener' }, '© OpenStreetMap contributors'), ' (ODbL), calcolo OSRM.')),
     stato.annulla && h('div', { class: 'avviso-basso', role: 'status' },
       h('span', {}, stato.annulla.testo),
       h('button', { type: 'button', onclick: () => { const id = stato.annulla.id; stato.annulla = null; cambia(g => segna(g, id, { stato: null })); } }, 'Annulla')),
@@ -248,10 +326,13 @@ function puntuali(p) {
 }
 
 // Prima di partire: il punto stretto (dato vero del foglio: tempo fra due inizi, strada compresa) e la giornata nel Calendario
-function gruppoPrimaDiPartire(giro) {
+// «Visto» lo manda in fondo alla pagina (il prossimo sale in cima); un foglio nuovo lo rimette su, perché può cambiare.
+function gruppoPrimaDiPartire(giro, inCima) {
   const p = puntoStretto(giro);
   const stretto = p && p.minuti <= 60;
-  return h('section', { class: 'gruppo' }, h('h2', {}, 'Prima di partire'),
+  return h('section', { class: 'gruppo' }, h('div', { class: 'testa' }, h('h2', {}, 'Prima di partire'),
+    inCima && h('button', { type: 'button', class: 'visto', 'aria-label': 'Visto, sposta in fondo',
+      onclick: () => { stato.giorno.primaVisto = true; salva(); disegna(); } }, 'Visto')),
     h('div', { class: 'lista' },
       stretto && h('div', { class: 'riga stretto' }, icona('info', false),
         h('span', { class: 'corpo' },
@@ -261,11 +342,63 @@ function gruppoPrimaDiPartire(giro) {
     h('p', { class: 'piede' }, 'Nel calendario vanno solo comune, lavoro e note, mai il nome del cliente. Avviso 30 minuti prima.'));
 }
 
+// «tra quanto» accanto all'orario del prossimo: si scrive nel suo posto, senza ridisegnare (G14), solo per il foglio di oggi
+function riempiManca() {
+  const oggi = stato.giorno && isoDi(new Date()) === stato.iso;
+  for (const el of document.querySelectorAll('[data-manca]')) {
+    const i = stato.giorno?.giornata.interventi[+el.dataset.manca];
+    el.textContent = oggi && i ? quantoManca(i.orario, adesso()) : '';
+  }
+}
+setInterval(riempiManca, 15000);
+document.addEventListener('visibilitychange', () => { riempiManca(); if (!document.hidden) aggiornaGuida(); });
+
+// ---------- minuti in macchina, sotto Naviga ----------
+// La posizione si chiede solo ad app aperta e non esce dal telefono: serve a trovare il comune dove sei. I minuti sono
+// nella tabella strade.json (nostra: OSRM su OpenStreetMap, da centro a centro del comune, senza traffico).
+let strade = null, dove = null, doveAlle = 0, ultimaPosizione = 0, chiesta = false;
+async function aggiornaGuida() {
+  if (!document.querySelector('[data-guida-i]') || !navigator.geolocation) return riempiGuida();
+  if (Date.now() - ultimaPosizione < 120000) return riempiGuida(); // al massimo ogni 2 minuti (batteria)
+  ultimaPosizione = Date.now();
+  try {
+    const permesso = (await navigator.permissions?.query({ name: 'geolocation' }).catch(() => null))?.state;
+    if (permesso === 'denied' || (permesso !== 'granted' && chiesta)) return riempiGuida(); // non la si richiede ogni 2 minuti
+    chiesta = true;
+    tabellaComuni ??= await (await fetch('comuni.json')).json();
+    if (!strade) {
+      const j = await (await fetch('strade.json')).json();
+      const testo = atob(j.minuti), minuti = new Uint8Array(testo.length);
+      for (let k = 0; k < testo.length; k++) minuti[k] = testo.charCodeAt(k); // un ciclo semplice: misurato in Node 2 ms contro 48 di Uint8Array.from con una funzione
+      strade = { comuni: j.comuni, minuti };
+    }
+    const p = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, { enableHighAccuracy: false, maximumAge: 120000, timeout: 20000 }));
+    dove = comuneVicino(tabellaComuni, strade.comuni, p.coords.latitude, p.coords.longitude);
+    doveAlle = Date.now();
+  } catch { /* senza permesso o senza tabella il posto resta vuoto */ }
+  riempiGuida();
+}
+function riempiGuida() {
+  for (const el of document.querySelectorAll('[data-guida-i]')) {
+    const i = stato.giorno?.giornata.interventi[+el.dataset.guidaI];
+    // una posizione di più di 10 minuti fa non dice più dove sei (galleria, GPS fermo): meglio niente
+    const fresca = dove && Date.now() - doveAlle < 10 * 60e3;
+    const m = fresca && strade && i ? minutiGuida(strade, dove, chiave(i.comune)) : null;
+    el.textContent = m == null ? '' : m === 0 ? 'in zona' : durata(m);
+  }
+}
+setInterval(() => { if (!document.hidden) aggiornaGuida(); }, 120000);
+
 // ---------- meteo ----------
 // I dati arrivano dalla rete mentre Riccardo tocca. Due regole (G14): non si ridisegna, si scrive solo dentro posti
 // riservati senza tasti; e niente di ciò che arriva sta SOPRA un tasto, perché crescendo lo sposterebbe sotto il dito.
-// Per questo la sezione Meteo sta sotto il Prossimo, e nel Prossimo l'etichetta sta sulla riga dell'orario, che non va a capo.
+// Per questo la sezione Meteo sta sotto il Prossimo, e nel Prossimo l'etichetta ha una riga sua, alta uguale vuota o piena.
 const tagMeteo = i => h('span', { class: 'meteo-tag', 'data-meteo-i': String(indice(i)) });
+// l'icona del cielo nell'ora e nel comune del lavoro: anche lei ha il suo posto prima che arrivi il meteo
+const tagCielo = i => h('span', { class: 'cielo', 'data-cielo-i': String(indice(i)) });
+const NOMI_CIELO = { sole: 'Sereno', luna: 'Sereno', 'sole-nuvole': 'Poco nuvoloso', 'luna-nuvole': 'Poco nuvoloso', nuvole: 'Nuvoloso',
+  pioggia: 'Pioggia', temporale: 'Temporale', neve: 'Neve', nebbia: 'Nebbia' };
+const CENTRO_ZONA = [45.7, 9.0]; // finché comuni.json non è letto: alba e tramonto cambiano di pochi minuti nella zona
 const gruppoMeteo = () => h('section', { class: 'gruppo' }, h('h2', {}, 'Meteo'),
   h('div', { class: 'lista' }, h('div', { class: 'riga meteo', 'data-meteo': 'riassunto' })),
   h('p', { class: 'piede', 'data-meteo': 'fonte' }));
@@ -290,6 +423,14 @@ function riempiMeteo() {
   for (const el of document.querySelectorAll('[data-meteo-i]')) {
     const i = g.giornata.interventi[+el.dataset.meteoI];
     el.textContent = i ? segnale(i) : '';
+  }
+  for (const el of document.querySelectorAll('[data-cielo-i]')) {
+    const i = g.giornata.interventi[+el.dataset.cieloI];
+    const notte = !!i && alBuio(stato.iso, i.orario.da, ...(tabellaComuni?.[chiave(i.comune)] ?? CENTRO_ZONA));
+    const c = i ? cieloDelLavoro(ore(i), stato.iso, i.orario, notte) : null;
+    el.dataset.tipo = c ?? '';
+    if (c) { el.setAttribute('role', 'img'); el.setAttribute('aria-label', NOMI_CIELO[c]); } else { el.removeAttribute('role'); el.removeAttribute('aria-label'); }
+    el.replaceChildren(...(c ? [icona(c, false)] : []));
   }
   const riga = document.querySelector('[data-meteo="riassunto"]');
   if (riga) {
@@ -504,7 +645,8 @@ function disegna() {
   const contenitore = h('div', { class: 'schermo' }, schermo);
   app.replaceChildren(contenitore);
   if (prova) contenitore.append(...schermoProva());
-  if (!i && !prova && stato.giorno) { riempiMeteo(); aggiornaMeteo(); }
+  if (!i && !prova && stato.giorno) { riempiMeteo(); aggiornaMeteo(); riempiManca(); }
+  if (!prova && stato.giorno) aggiornaGuida();
   document.title = i ? `${nomeComune(i.comune)} · Giro` : 'Giro';
   if (i && m[2]) document.getElementById('campo-telefono')?.focus(); // arrivati da «Aggiungi numero»
 }

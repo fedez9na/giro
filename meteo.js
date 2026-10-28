@@ -19,13 +19,19 @@ const fineOra = (iso, ts) => giorniDa(iso, ts.slice(0, 10)) * 1440 + minuti(ts.s
 const numeri = (r, k) => r.map(x => x[k]).filter(v => v != null);
 const massimo = v => (v.length ? Math.max(...v) : null);
 
-export const compatta = w => ({ t: w.timestamp, mm: w.precipitation, prob: w.precipitation_probability, raffica: w.wind_gust_speed, cond: w.condition });
+export const compatta = w => ({ t: w.timestamp, mm: w.precipitation, prob: w.precipitation_probability, raffica: w.wind_gust_speed, cond: w.condition, nuvole: w.cloud_cover });
 
-export function meteoDelLavoro(ore, iso, orario) {
-  if (!orario?.da || !ore?.length) return null;
+// le ore che toccano il lavoro: dalla finestra d'arrivo a 2 ore dopo la sua fine
+function oreDelLavoro(ore, iso, orario) {
+  if (!orario?.da || !ore?.length) return [];
   // una fine prima dell'inizio (20-00, o un refuso) non svuota la finestra: si conta dall'inizio
   const da = minuti(orario.da), fine = Math.max(da, minuti(orario.a ?? orario.da)) + DOPO;
-  const r = ore.filter(x => { const t = fineOra(iso, x.t); return t > da && t - 60 < fine; });
+  return ore.filter(x => { const t = fineOra(iso, x.t); return t > da && t - 60 < fine; });
+}
+
+export function meteoDelLavoro(ore, iso, orario) {
+  const r = oreDelLavoro(ore, iso, orario);
+  if (!r.length) return null;
   const mm = numeri(r, 'mm');
   const m = {
     prob: massimo(numeri(r, 'prob')),
@@ -49,6 +55,43 @@ export function etichetta(m) {
   if (m.raffica >= SOGLIE.raffica) p.push(`raffiche ${Math.round(m.raffica)} km/h`);
   const s = p.join(' · ');
   return s && s[0].toUpperCase() + s.slice(1);
+}
+
+// L'icona del lavoro: prima ciò che bagna o fa male (come l'etichetta), poi com'è il cielo. Senza nuvole non si inventa il sole.
+// ponytail: soglie in ottavi di cielo (fino a 2/8 sereno, da 6/8 coperto), da rivedere se Riccardo le sente sbagliate
+export function cieloDelLavoro(ore, iso, orario, notte) {
+  const r = oreDelLavoro(ore, iso, orario), m = meteoDelLavoro(ore, iso, orario);
+  if (!m) return null;
+  if (m.temporale) return 'temporale';
+  if (m.tipo === 'neve' || m.tipo === 'nevischio') return 'neve';
+  if (m.tipo === 'grandine' || m.mm >= SOGLIE.mm || m.prob >= SOGLIE.prob) return 'pioggia';
+  if (r.some(x => x.cond === 'fog')) return 'nebbia';
+  const n = numeri(r, 'nuvole');
+  if (!n.length) return null;
+  const media = n.reduce((s, v) => s + v, 0) / n.length;
+  if (media >= 75) return 'nuvole';
+  return `${notte ? 'luna' : 'sole'}${media > 25 ? '-nuvole' : ''}`;
+}
+
+// Il sole è sopra l'orizzonte? (formula astronomica corta, errore di un paio di minuti su alba e tramonto)
+const RAD = Math.PI / 180;
+export function diGiorno(ms, lat, lon) {
+  const d = ms / 864e5 - 10957.5; // giorni da J2000
+  const g = (357.529 + 0.98560028 * d) * RAD;
+  const l = (280.459 + 0.98564736 * d + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * RAD;
+  const e = (23.439 - 3.6e-7 * d) * RAD;
+  const dec = Math.asin(Math.sin(e) * Math.sin(l)), ra = Math.atan2(Math.cos(e) * Math.sin(l), Math.cos(l));
+  const angolo = (280.46061837 + 360.98564736629 * d + lon) * RAD - ra;
+  const h = Math.asin(Math.sin(lat * RAD) * Math.sin(dec) + Math.cos(lat * RAD) * Math.cos(dec) * Math.cos(angolo));
+  return h / RAD > -0.833;
+}
+
+// al buio all'ora del foglio (ora del telefono); un orario illeggibile non fa notte
+export function alBuio(iso, hhmm, lat, lon) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm ?? '');
+  if (!m) return false;
+  const [a, me, g] = iso.split('-').map(Number);
+  return !diGiorno(new Date(a, me - 1, g, +m[1], +m[2]).getTime(), lat, lon);
 }
 
 const RISCHI = [['Per rischio temporali', 'temporali'], ['Per rischio idrogeologico', 'rischio idrogeologico'], ['Per rischio idraulico', 'rischio idraulico']];
@@ -120,13 +163,14 @@ const GHIACCIO = 0.2;
 // Nel telefono restano solo le ore del giorno del foglio
 export function daSito(j, chiavi, iso) {
   const peggio = v => { const n = v.filter(x => x != null); return n.length ? Math.max(...n) : null; };
+  const media = v => { const n = v.filter(x => x != null); return n.length ? Math.round(n.reduce((s, x) => s + x, 0) / n.length) : null; };
   const quali = j.ore.flatMap((t, n) => (delGiorno(iso, t) ? [n] : []));
   const comuni = {};
   for (const k of chiavi.filter(c => j.comuni[c])) {
     const m = Object.values(j.comuni[k]);
     const c = (campo, n) => m.some(x => x[campo]?.[n] >= GHIACCIO);
     comuni[k] = { ore: quali.map(n => ({
-      t: j.ore[n], mm: peggio(m.map(x => x.mm?.[n])), prob: null, raffica: peggio(m.map(x => x.raffica?.[n])),
+      t: j.ore[n], mm: peggio(m.map(x => x.mm?.[n])), prob: null, raffica: peggio(m.map(x => x.raffica?.[n])), nuvole: media(m.map(x => x.nuvole?.[n])),
       cond: m.some(x => x.fulmini?.[n] === 1) ? 'thunderstorm' : c('grandine', n) ? 'hail' : c('neve', n) ? 'snow' : null,
     })) };
   }
