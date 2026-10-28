@@ -7,9 +7,11 @@ import { compilaPdf } from './compila.js';
 import { naviga, chiama, stoArrivando, testoArrivo } from './link.js';
 import { puntoStretto, quantoManca, comuneVicino, minutiGuida, durata } from './margini.js';
 import { creaIcs } from './calendario.js';
-import { mostraParete, prepara, salvaCopertine, leggiCodice, leggiCollegamento, scaricaParete } from './parete.js';
+import { mostraParete, prepara, salvaCopertine, leggiCopertine, leggiCodice, leggiCollegamento, scaricaParete, costruisciMuro, liberaMuro, cornice } from './parete.js';
 import { hm, nomeComune, tipo, notePer } from './testi.js';
 import { chiave, meteoDelLavoro, etichetta, riassunto, leggiMeteo, leggiAllerte, leggiMeteoSito, daSito, sitoValido, DOPO, cieloDelLavoro, alBuio } from './meteo.js';
+import { foglioDaTurni, adottaId } from './turni.js';
+import * as ufficio from './ufficio.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs';
 // grammatica del telefono: Material su Android, iOS altrove; ?os=ios|android la forza (per le prove)
@@ -76,6 +78,12 @@ async function leggiEApri(bytes, ingresso) {
     return vai('#/');
   }
   const esistente = leggiLS(CHIAVE + foglio.data.iso);
+  if (esistente?.online) { // quel giorno lo manda già l'ufficio: un PDF mescolato confonderebbe righe ed esiti
+    stato.avviso = { testo: 'Questo giorno arriva già dall’ufficio, aggiornato da solo: il foglio non serve.' };
+    ingresso?.chiudi();
+    if (stato.iso !== foglio.data.iso) apriGiorno(foglio.data.iso); else vai('#/');
+    return;
+  }
   const giornata = esistente ? unisci(esistente.giornata, foglio) : nuovaGiornata(foglio);
   stato.iso = foglio.data.iso;
   stato.giorno = { giornata, pdf: aBase64(bytes), inviato: esistente?.inviato ?? null, meteo: esistente?.meteo ?? null, allerte: esistente?.allerte ?? null };
@@ -209,11 +217,16 @@ function cambia(fn) {
   stato.giorno.giornata = fn(stato.giorno.giornata);
   salva();
   disegna();
+  if (stato.giorno.online) programmaEsiti();
 }
 function aggiorna(fn) {
   stato.giorno.giornata = fn(stato.giorno.giornata);
   salva();
+  if (stato.giorno.online) programmaEsiti();
 }
+// via e telefono: quelli che scrive Riccardo valgono su quelli dell'ufficio (che arrivano coi turni)
+const viaDi = x => x.aggiunte?.via || x.via || '';
+const telDi = x => x.aggiunte?.telefono || x.telefono || '';
 const vai = hash => (location.hash === hash ? disegna() : (location.hash = hash));
 const apriFile = () => document.getElementById('file').click();
 const attuale = id => stato.giorno.giornata.interventi.find(x => x.id === id);
@@ -221,7 +234,7 @@ const attuale = id => stato.giorno.giornata.interventi.find(x => x.id === id);
 // I tre tasti leggono via e numero al momento del tocco: così vale anche quello appena incollato, senza ridisegnare.
 function azioni(i) {
   const id = i.id;
-  const tel = () => chiama({ telefono: attuale(id).aggiunte?.telefono });
+  const tel = () => chiama({ telefono: telDi(attuale(id)) });
   const chiamaTasto = h('a', { href: tel() ?? '#', onclick: e => {
     const t = tel();
     if (t) { e.currentTarget.href = t; return; }
@@ -230,8 +243,8 @@ function azioni(i) {
     if (campo) campo.focus(); else vai(`#/i/${indice(attuale(id))}?telefono`);
   } }, icona('chiama'), tel() ? 'Chiama' : 'Aggiungi numero');
   return h('div', { class: 'azioni' },
-    h('a', { href: naviga({ comune: i.comune, via: i.aggiunte?.via }), target: '_blank', rel: 'noopener noreferrer',
-      onclick: e => { e.currentTarget.href = naviga({ comune: i.comune, via: attuale(id).aggiunte?.via }); } }, icona('naviga'), 'Naviga',
+    h('a', { href: naviga({ comune: i.comune, via: viaDi(i) }), target: '_blank', rel: 'noopener noreferrer',
+      onclick: e => { e.currentTarget.href = naviga({ comune: i.comune, via: viaDi(attuale(id)) }); } }, icona('naviga'), 'Naviga',
       h('span', { class: 'guida', 'data-guida-i': String(indice(i)) })),
     chiamaTasto,
     h('a', { href: '#', target: '_blank', rel: 'noopener noreferrer', onclick: e => {
@@ -240,7 +253,7 @@ function azioni(i) {
       const oggi = isoDi(new Date());
       const futuro = x.orario.da && (stato.iso > oggi || (stato.iso === oggi && minuti(x.orario.da) > adesso()));
       const ora = futuro ? hm(x.orario.da) : null;
-      e.currentTarget.href = stoArrivando({ telefono: x.aggiunte?.telefono }, testoArrivo(x, ora, impostazioni().chiSono));
+      e.currentTarget.href = stoArrivando({ telefono: telDi(x) }, testoArrivo(x, ora, impostazioni().chiSono));
     } }, icona('messaggio'), 'Sto arrivando'));
 }
 const indice = i => stato.giorno.giornata.interventi.indexOf(i);
@@ -262,10 +275,15 @@ function schermoVuoto() {
       passi.map((p, k) => h('div', { class: 'riga' }, h('span', { class: 'numero' }, String(k + 1)), h('span', { class: 'corpo' }, p))))),
     h('button', { type: 'button', class: 'tasto-pieno', onclick: apriFile }, 'Apri il foglio dei turni'),
     h('p', { class: 'piede' }, 'Il foglio e quello che segni restano solo in questo telefono.'),
+    // con l'ufficio collegato il giorno arriva da solo, senza WhatsApp né File
+    h('section', { class: 'gruppo' }, h('h2', {}, 'L’ufficio'), h('div', { class: 'lista' },
+      h('button', { type: 'button', class: 'riga azione-riga', onclick: () => vai('#/ufficio') },
+        ufficio.collegato() ? 'Collegato all’ufficio: aspetto i turni' : 'Collegati all’ufficio'))),
     // si collega anche prima del primo foglio
     h('section', { class: 'gruppo' }, h('h2', {}, 'La tua parete d’ingresso'), h('div', { class: 'lista' },
       h('button', { type: 'button', class: 'riga azione-riga', onclick: incollaParete }, testoCollega()),
-      h('button', { type: 'button', class: 'riga azione-riga', onclick: scegliCopertine }, 'Oppure scegli le copertine dalle foto'))),
+      h('button', { type: 'button', class: 'riga azione-riga', onclick: scegliCopertine }, 'Oppure scegli le copertine dalle foto'),
+      h('button', { type: 'button', class: 'riga azione-riga', onclick: () => vai('#/casa') }, 'Guarda la tua parete'))),
     !installata && !ANDROID && h('p', { class: 'piede' },
       'Prima volta: Condividi → «Aggiungi alla schermata Home». Senza, Safari cancella i dati dopo 7 giorni.'),
   ];
@@ -275,7 +293,16 @@ function gruppoAvviso() {
   const av = stato.avviso;
   return h('section', { class: 'gruppo' }, h('div', { class: 'lista' },
     h('div', { class: av.errore ? 'avviso errore' : 'avviso' }, icona('info', false),
-      h('div', {}, av.testo, av.lista && h('ul', {}, av.lista.map(r => h('li', {}, r)))))));
+      h('div', {}, av.testo, av.lista && h('ul', {}, av.lista.map(r => h('li', {}, r))))),
+    av.apri && h('button', { type: 'button', class: 'riga azione-riga', onclick: () => apriGiorno(av.apri) }, `Apri ${nomeGiorno(av.apri)}`)));
+}
+const nomeGiorno = iso => new Date(`${iso}T12:00`).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+function apriGiorno(iso) {
+  const g = leggiLS(CHIAVE + iso);
+  if (!g) return;
+  stato.iso = iso; stato.giorno = g;
+  if (stato.avviso?.apri === iso) stato.avviso = null;
+  vai('#/');
 }
 
 function schermoGiornata() {
@@ -294,9 +321,11 @@ function schermoGiornata() {
     i.esito.stato && h('span', { class: i.esito.stato === 'OK' ? 'esito-ok' : 'esito-ko' }, i.esito.stato),
     h('span', { class: 'chevron' }, icona('chevron', false)));
   const imp = impostazioni();
+  const online = !!stato.giorno.online; // turni arrivati dall'ufficio: gli esiti tornano da soli, il PDF non c'è
 
   return [
-    h('div', { class: 'barra' }, h('button', { type: 'button', class: 'azione', onclick: apriFile }, 'Foglio nuovo')),
+    h('div', { class: 'barra' }, h('button', { type: 'button', class: 'indietro', onclick: () => vai('#/casa') }, 'Parete'),
+      h('button', { type: 'button', class: 'azione', onclick: apriFile }, 'Foglio nuovo')),
     h('div', { class: 'titolo-grande' }, h('h1', {}, titoloGiorno()),
       h('p', {}, `${dataTesto} · ${giro.length} interventi, ${fatti.length} fatti`)),
     stato.avviso && gruppoAvviso(),
@@ -311,22 +340,24 @@ function schermoGiornata() {
         h('div', { class: 'meteo-riga' }, tagMeteo(prossimo)),
         azioni(prossimo),
         h('button', { type: 'button', class: 'apri-scheda', onclick: () => vai(`#/i/${indice(prossimo)}`) }, 'Segna l’esito')))),
-    prossimo && stato.iso >= isoDi(new Date()) && gruppoMeteo(),
+    prossimo && gruppoMeteo(), // anche per un foglio passato: si dice perché non c'è, invece di sparire
     !prossimo && h('section', { class: 'gruppo' }, h('h2', { class: 'forte' }, 'Giornata finita'),
       h('p', { class: 'piede', style: 'padding:0 4px 12px' }, 'Hai segnato tutti gli interventi.')),
-    !prossimo && h('button', { type: 'button', class: 'tasto-pieno', onclick: () => vai('#/prova') }, 'Manda il foglio all’ufficio'),
+    !prossimo && !online && h('button', { type: 'button', class: 'tasto-pieno', onclick: () => vai('#/prova') }, 'Manda il foglio all’ufficio'),
     poi.length > 0 && h('section', { class: 'gruppo' }, h('h2', {}, 'Poi'), h('div', { class: 'lista' }, poi.map(riga))),
     fatti.length > 0 && h('section', { class: 'gruppo' }, h('h2', {}, 'Fatti'), h('div', { class: 'lista' }, fatti.map(riga))),
     prossimo && stato.giorno.primaVisto && gruppoPrimaDiPartire(giro, false),
     h('section', { class: 'gruppo' }, h('h2', {}, 'Fine giornata'),
       h('div', { class: 'lista' },
-        prossimo && h('button', { type: 'button', class: 'riga azione-riga', onclick: () => vai('#/prova') }, 'Manda il foglio all’ufficio'),
+        prossimo && !online && h('button', { type: 'button', class: 'riga azione-riga', onclick: () => vai('#/prova') }, 'Manda il foglio all’ufficio'),
+        h('button', { type: 'button', class: 'riga azione-riga', onclick: () => vai('#/ufficio') }, ufficio.collegato() ? 'L’ufficio: collegato' : 'Collegati all’ufficio'),
         h('button', { type: 'button', class: 'riga azione-riga', onclick: scegliCopertine }, 'La tua parete d’ingresso: scegli le copertine'),
         h('button', { type: 'button', class: 'riga azione-riga', onclick: incollaParete }, testoCollega()),
         h('label', { class: 'riga' }, h('span', { class: 'etichetta' }, 'Nei messaggi sei'),
           h('input', { value: imp.chiSono, placeholder: 'il tuo nome', autocomplete: 'given-name',
             oninput: e => scriviLS('giro:impostazioni', { ...impostazioni(), chiSono: e.target.value.trim() }) }))),
-      h('p', { class: 'piede' }, stato.giorno.inviato
+      h('p', { class: 'piede', 'data-esiti': '' }, online ? testoEsiti()
+        : stato.giorno.inviato
         ? `Foglio preparato alle ${new Date(stato.giorno.inviato).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}. Nel foglio vanno solo esito, motivo KO ed euro extra.`
         : `Nel foglio vanno solo esito, motivo KO ed euro extra. I dati restano in questo telefono e si cancellano dopo ${GIORNI_TENUTI} giorni.`),
       h('p', { class: 'piede' }, 'Minuti sotto Naviga: dal centro del comune dove sei a quello del cliente, senza traffico. La posizione resta in questo telefono. Strade ',
@@ -460,7 +491,8 @@ function riempiMeteo() {
     const r = riassunto(giro, g.meteo, stato.iso);
     const zone = giro.map(i => g.allerte?.comuni?.[chiave(i.comune)]).filter(z => z?.allerte.length);
     const allerte = [...new Set(zone.flatMap(z => z.allerte))];
-    const attesa = t.stato === 'cerco' ? 'Cerco il meteo…' : !giro.length ? 'Gli orari rimasti sono già passati'
+    const attesa = stato.iso < isoDi(new Date()) ? `Il foglio è di ${titoloGiorno().toLowerCase()} ${new Date(`${stato.iso}T12:00`).getDate()}: il meteo c’è da oggi in avanti`
+      : t.stato === 'cerco' ? 'Cerco il meteo…' : !giro.length ? 'Gli orari rimasti sono già passati'
       : g.meteo ? 'Meteo non trovato per questi comuni'
       : !navigator.onLine ? 'Meteo: serve la rete' : t.stato === 'errore' ? 'Meteo non disponibile ora' : 'Cerco il meteo…';
     riga.classList.toggle('attenzione', allerte.length > 0 || giro.some(segnale));
@@ -604,7 +636,6 @@ async function disegnaProva(box, g) {
 }
 
 function schermoScheda(i, focusTelefono) {
-  const a = i.aggiunte ?? {};
   const ko = i.esito.stato === 'KO';
   const segnaEsito = s => {
     const prima = i.esito.stato;
@@ -618,7 +649,7 @@ function schermoScheda(i, focusTelefono) {
     }
   };
   const campo = (etichetta, props) => h('label', { class: 'riga' }, h('span', { class: 'etichetta' }, etichetta), h('input', props));
-  const telefono = { id: 'campo-telefono', type: 'tel', inputmode: 'tel', autocomplete: 'off', value: a.telefono ?? '', placeholder: 'incolla il numero',
+  const telefono = { id: 'campo-telefono', type: 'tel', inputmode: 'tel', autocomplete: 'off', value: telDi(i), placeholder: 'incolla il numero',
     oninput: e => {
       aggiorna(g => aggiungi(g, i.id, { telefono: e.target.value.trim() }));
       const t = document.querySelector('.azioni a:nth-child(2)');
@@ -645,27 +676,53 @@ function schermoScheda(i, focusTelefono) {
       h('datalist', { id: 'motivi' }, MOTIVI_KO.map(m => h('option', { value: m })))),
     h('section', { class: 'gruppo' }, h('h2', {}, 'Indirizzo e telefono'),
       h('div', { class: 'lista' },
-        campo('Via', { autocomplete: 'off', value: a.via ?? '', placeholder: 'incolla la via',
+        campo('Via', { autocomplete: 'off', value: viaDi(i), placeholder: 'incolla la via',
           oninput: e => aggiorna(g => aggiungi(g, i.id, { via: e.target.value.trim() })) }),
         campo('Telefono', telefono)),
-      h('p', { class: 'piede' }, `Non sono nel foglio: incollali da un messaggio. Senza via, Naviga ti porta in centro a ${nomeComune(i.comune)}.`)),
+      h('p', { class: 'piede' }, i.via || i.telefono ? 'Li ha scritti l’ufficio. Se li correggi, valgono i tuoi e restano in questo telefono.'
+        : `Non sono nel foglio: incollali da un messaggio. Senza via, Naviga ti porta in centro a ${nomeComune(i.comune)}.`)),
     i.note && h('section', { class: 'gruppo' }, h('h2', {}, 'Note dell’ufficio'),
       h('div', { class: 'lista' }, h('div', { class: 'riga' }, h('span', { class: 'corpo' }, i.note)))),
   ];
 }
 
+// La home: la sua parete di copertine in mezzo, i LED che girano intorno al telefono, e da lì si entra nel giro.
+// La parete arriva dopo (memoria del telefono): ha il suo posto, e i tasti stanno sotto, fuori dalla sua portata.
+let muroCasa = null;
+function schermoCasa() {
+  const posto = h('div', { class: 'casa-muro' });
+  costruisciMuro(innerWidth - 44, innerHeight - (stato.giorno ? 230 : 284)).then(m => { // senza foglio c'è una riga in più sotto
+    if (location.hash !== '#/casa') return liberaMuro(m);
+    muroCasa = m;
+    if (m?.colore) posto.closest('.casa').style.background = m.colore;
+    posto.replaceChildren(m ? m.muro : h('p', { class: 'casa-vuota' }, 'La tua parete è vuota: componila sul poster shop o scegli le copertine dalle foto'));
+  });
+  const shop = h('a', { class: 'casa-piccolo', href: 'https://immersive-poster-shop.vercel.app/parete', target: '_blank', rel: 'noopener' }, 'Componi la parete');
+  return [h('div', { class: 'casa' }, posto,
+    h('div', { class: 'casa-comandi' },
+      h('button', { type: 'button', class: 'casa-entra', onclick: () => (stato.giorno ? vai('#/') : apriFile()) }, stato.giorno ? `Il giro di ${titoloGiorno().toLowerCase()}` : 'Apri il foglio dei turni'),
+      h('div', { class: 'casa-riga' }, shop,
+        h('button', { type: 'button', class: 'casa-piccolo', onclick: incollaParete }, leggiLS(COLLEGAMENTO) ? 'Incolla un codice' : 'Collega lo shop'),
+        h('button', { type: 'button', class: 'casa-piccolo', onclick: scegliCopertine }, 'Dalle foto')),
+      !stato.giorno && h('button', { type: 'button', class: 'casa-aiuto', onclick: () => vai('#/') }, 'Come si apre il foglio')),
+    ...cornice())];
+}
+
 function disegna() {
   const app = document.getElementById('app');
+  liberaMuro(muroCasa); muroCasa = null;
   const m = location.hash.match(/^#\/i\/(\d+)(\?telefono)?/);
   const i = m && stato.giorno?.giornata.interventi[+m[1]];
-  const prova = location.hash === '#/prova' && stato.giorno;
-  const schermo = i ? schermoScheda(i, !!m[2]) : prova ? [] : stato.giorno ? schermoGiornata() : schermoVuoto();
+  const prova = location.hash === '#/prova' && stato.giorno && !stato.giorno.online; // un giorno dall'ufficio non ha il PDF
+  const casa = location.hash === '#/casa';
+  const conUfficio = location.hash === '#/ufficio';
+  const schermo = casa ? schermoCasa() : conUfficio ? schermoUfficio() : i ? schermoScheda(i, !!m[2]) : prova ? [] : stato.giorno ? schermoGiornata() : schermoVuoto();
   // la prova misura la larghezza del riquadro: si costruisce dopo che lo schermo è nella pagina
   const contenitore = h('div', { class: 'schermo' }, schermo);
   app.replaceChildren(contenitore);
   if (prova) contenitore.append(...schermoProva());
-  if (!i && !prova && stato.giorno) { riempiMeteo(); aggiornaMeteo(); riempiManca(); }
-  if (!prova && stato.giorno) aggiornaGuida();
+  if (!casa && !conUfficio && !i && !prova && stato.giorno) { riempiMeteo(); aggiornaMeteo(); riempiManca(); }
+  if (!casa && !conUfficio && !prova && stato.giorno) aggiornaGuida();
   document.title = i ? `${nomeComune(i.comune)} · Giro` : 'Giro';
   if (i && m[2]) document.getElementById('campo-telefono')?.focus(); // arrivati da «Aggiungi numero»
 }
@@ -685,6 +742,182 @@ async function manda() {
   if (location.hash === '#/prova') history.back(); else disegna();
 }
 
+// ---------- l'ufficio: i turni arrivano da soli, gli esiti tornano ----------
+// I turni arrivano chiusi per la chiave di questo telefono (ufficio.js) e qui diventano la giornata, come un foglio letto.
+// All'ufficio torna solo ciò che il loro foglio chiede (esito, motivo KO, euro extra), un intervento alla volta.
+const uff = { p: null, canale: null, gestori: null, notifiche: null, rifare: false };
+const IPHONE = /iP(hone|ad|od)/.test(navigator.userAgent) || document.documentElement.dataset.os === 'ios' && navigator.maxTouchPoints > 1;
+const installata = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+async function collegaUfficio() {
+  if (!ufficio.collegato()) return;
+  try {
+    uff.p = await ufficio.io();
+    if (!uff.p) {
+      if (!navigator.onLine) return; // senza rete non si sa: si riprova quando torna
+      uff.rifare = true;
+      stato.avviso = { errore: true, testo: 'Il collegamento all’ufficio va rifatto: tocca «Collegati all’ufficio».' };
+      return disegna();
+    }
+    if (navigator.onLine && !(await ufficio.controllaChiave(uff.p))) {
+      uff.p = null; uff.rifare = true;
+      stato.avviso = { errore: true, testo: 'L’ufficio ha cambiato la tua password: collegati di nuovo con quella nuova.' };
+      return disegna();
+    }
+    uff.canale ??= await ufficio.ascolta(`turni:${uff.p.id}`, 'turni', async r => riceviTurni(await ufficio.apriTurni(uff.p, [r])));
+    await aggiornaDallUfficio();
+    if (ufficio.statoNotifiche() === 'permesse') uff.notifiche = await ufficio.attivaNotifiche(uff.p).catch(() => null); // già permesse: l'iscrizione si rinnova senza chiedere
+  } catch (e) { console.warn('ufficio', e); }
+}
+
+async function aggiornaDallUfficio() {
+  if (!uff.p || !navigator.onLine) return;
+  try {
+    await riceviTurni(await ufficio.mieiTurni(uff.p, isoDi(new Date(Date.now() - 864e5))));
+  } catch (e) { console.warn('turni', e); }
+  mandaEsiti();
+}
+
+// in fila: due arrivi insieme (apertura e tempo reale) non si pestano
+let arrivo = Promise.resolve();
+const riceviTurni = aperti => (arrivo = arrivo.then(() => unisciTurni(aperti)).catch(e => console.warn('turni', e)));
+
+const ESITO_VUOTO = JSON.stringify({ stato: null, motivoKo: '', euroExtra: '' });
+const esitoDi = i => ({ stato: i.esito.stato, motivoKo: i.esito.motivoKo, euroExtra: i.esito.euroExtra });
+const daMandare = g => g.giornata.interventi.filter(i => !i.tolto && JSON.stringify(esitoDi(i)) !== (g.online.inviati[i.id] ?? ESITO_VUOTO));
+
+async function unisciTurni(aperti) {
+  const arrivati = [];
+  for (const { iso, turni } of aperti) {
+    if (turni?.iso !== iso || !Array.isArray(turni.righe) || !(turni.versione > 0)) continue;
+    const salvato = iso === stato.iso ? stato.giorno : leggiLS(CHIAVE + iso);
+    // il giorno di un'altra persona collegata prima su questo telefono non si mescola: si riparte da capo
+    const giorno = salvato?.online && salvato.online.persona !== uff.p.id ? null : salvato;
+    if (turni.versione <= (giorno?.online?.versione ?? 0)) continue; // già visti (o una versione vecchia rimandata)
+    const foglio = foglioDaTurni(turni);
+    const inviati = giorno?.online?.inviati ?? {};
+    let giornata;
+    if (giorno) giornata = unisci(adottaId(giorno.giornata, foglio), foglio);
+    else {
+      giornata = nuovaGiornata(foglio);
+      // telefono nuovo o dati cancellati: gli esiti già mandati tornano qui
+      for (const [id, e] of Object.entries(await ufficio.mieiEsiti(uff.p, iso).catch(() => ({})))) {
+        if (!giornata.interventi.some(i => i.id === id)) continue;
+        giornata = segna(giornata, id, { stato: e.stato === 'OK' || e.stato === 'KO' ? e.stato : null, motivoKo: String(e.motivoKo ?? ''), euroExtra: String(e.euroExtra ?? '') });
+        inviati[id] = JSON.stringify(esitoDi(giornata.interventi.find(i => i.id === id)));
+      }
+    }
+    const nuovo = { meteo: null, allerte: null, inviato: null, ...giorno, pdf: null, giornata, online: { versione: turni.versione, inviati, persona: uff.p.id } };
+    if (iso === stato.iso) stato.giorno = nuovo;
+    scriviLS(CHIAVE + iso, nuovo);
+    arrivati.push({ iso, nuovo: !giorno, cambi: giorno ? giornata.cambi : [] });
+  }
+  if (!arrivati.length) return;
+  // si cambia giorno da soli solo se non ce n'è uno aperto: sennò si resta dove si è (anche su ieri) e l'avviso dice «Apri …»
+  const vuoto = !stato.giorno;
+  if (vuoto) { stato.iso = scegliGiorno(); stato.giorno = stato.iso ? leggiLS(CHIAVE + stato.iso) : null; }
+  const qui = arrivati.find(a => a.iso === stato.iso), altrove = arrivati.find(a => a.iso !== stato.iso);
+  stato.avviso = qui && !qui.nuovo ? { ...avvisoCambi(stato.giorno.giornata), testo: 'L’ufficio ha aggiornato i turni. Gli esiti che avevi segnato restano.' }
+    : qui ? { testo: `Turni di ${nomeGiorno(qui.iso)} arrivati dall’ufficio.` }
+    : { testo: `${altrove.nuovo ? 'Sono arrivati' : 'L’ufficio ha aggiornato'} i turni di ${nomeGiorno(altrove.iso)}.`, apri: altrove.iso };
+  if (!qui?.cambi.length) delete stato.avviso.lista;
+  // i dati arrivano mentre tocca: niente ridisegno sotto il dito (G14). Una barra in basso, fuori dai tasti, e si mostra al tocco
+  if (vuoto || location.hash === '#/ufficio') return disegna();
+  document.querySelector('.avviso-arrivo')?.remove();
+  document.querySelector('.schermo')?.append(h('div', { class: 'avviso-basso avviso-arrivo', role: 'status' },
+    h('span', {}, qui && !qui.nuovo ? 'L’ufficio ha aggiornato i turni' : `Turni dall’ufficio: ${nomeGiorno((qui ?? altrove).iso)}`),
+    h('button', { type: 'button', onclick: () => vai('#/') }, 'Mostra')));
+}
+
+let attesaEsiti = 0, mandando = false, ancora = false;
+function programmaEsiti() { clearTimeout(attesaEsiti); attesaEsiti = setTimeout(mandaEsiti, 1000); }
+async function mandaEsiti() {
+  if (!uff.p || !navigator.onLine) return riempiEsiti();
+  if (mandando) { ancora = true; return; }
+  mandando = true;
+  let errore = false;
+  try {
+    uff.gestori ??= await ufficio.gestori();
+    for (const iso of giorniSalvati()) {
+      const g = iso === stato.iso ? stato.giorno : leggiLS(CHIAVE + iso);
+      if (!g?.online || g.online.persona !== uff.p.id) continue; // solo i giorni di chi è collegato adesso
+      for (const i of daMandare(g)) {
+        const e = esitoDi(i);
+        try { await ufficio.mandaEsito(uff.p, iso, i.id, e, uff.gestori); g.online.inviati[i.id] = JSON.stringify(e); } catch { errore = true; }
+      }
+      if (iso === stato.iso) salva(); else scriviLS(CHIAVE + iso, g);
+    }
+  } catch { errore = true; } finally { mandando = false; }
+  riempiEsiti();
+  if (ancora) { ancora = false; return mandaEsiti(); }
+  if (errore) { uff.gestori = null; setTimeout(mandaEsiti, 30000); }
+}
+function testoEsiti() {
+  const n = stato.giorno?.online ? daMandare(stato.giorno).length : 0;
+  return n ? `${n === 1 ? 'Un esito' : `${n} esiti`} da mandare all’ufficio: parte da solo appena c’è la rete.`
+    : 'Gli esiti arrivano all’ufficio da soli, appena li segni: solo esito, motivo KO ed euro extra.';
+}
+function riempiEsiti() { for (const el of document.querySelectorAll('[data-esiti]')) if (stato.giorno?.online) el.textContent = testoEsiti(); }
+
+function schermoUfficio() {
+  const barra = h('div', { class: 'barra' }, h('button', { type: 'button', class: 'indietro', 'aria-label': 'Indietro', onclick: () => vai('#/') },
+    icona('indietro', false), h('span', { class: 'etichetta-indietro' }, stato.giorno ? titoloGiorno() : 'Il tuo giro')));
+  if (!uff.p) {
+    const email = h('input', { type: 'email', autocomplete: 'username', autocapitalize: 'none', inputmode: 'email', placeholder: 'quella che ti ha dato l’ufficio' });
+    const pw = h('input', { type: 'password', autocomplete: 'current-password', placeholder: 'password' });
+    const errore = h('p', { class: 'piede errore-testo', role: 'alert' });
+    const entra = h('button', { type: 'submit', class: 'tasto-pieno' }, 'Collegati');
+    return [barra, h('div', { class: 'titolo-grande' }, h('h1', {}, 'L’ufficio'), h('p', {}, 'I turni arrivano da soli, senza WhatsApp né File')),
+      stato.avviso && gruppoAvviso(),
+      h('form', { onsubmit: async e => {
+        e.preventDefault();
+        entra.disabled = true; entra.textContent = 'Mi collego…'; errore.textContent = '';
+        try {
+          uff.p = await ufficio.entra(email.value, pw.value);
+          uff.rifare = false; uff.gestori = null;
+          stato.avviso = { testo: 'Collegato. I turni arrivano da soli; se attivi le notifiche ti avviso quando l’ufficio li pubblica.' };
+          uff.canale ??= await ufficio.ascolta(`turni:${uff.p.id}`, 'turni', async r => riceviTurni(await ufficio.apriTurni(uff.p, [r])));
+          disegna();
+          aggiornaDallUfficio();
+        } catch (x) { errore.textContent = x.message; entra.disabled = false; entra.textContent = 'Collegati'; }
+      } },
+      h('section', { class: 'gruppo' }, h('div', { class: 'lista' },
+        h('label', { class: 'riga' }, h('span', { class: 'etichetta' }, 'Email'), email),
+        h('label', { class: 'riga' }, h('span', { class: 'etichetta' }, 'Password'), pw)),
+        errore, h('p', { class: 'piede' }, 'Email e password te le dà l’ufficio. Le scrivi una volta: poi il telefono resta collegato.')),
+      entra),
+      IPHONE && !installata() && h('p', { class: 'piede' }, 'Su iPhone collegati dall’icona di Giro sulla schermata Home (Condividi → «Aggiungi alla schermata Home»): è lì che arrivano le notifiche.')];
+  }
+  const n = ufficio.statoNotifiche();
+  const testoNotifiche = uff.notifiche === 'attive' ? 'Notifiche attive: ti avviso quando l’ufficio pubblica i turni.'
+    : n === 'negate' || uff.notifiche === 'negate' ? 'Notifiche bloccate: si riattivano dalle impostazioni del telefono, alla voce Giro (o del browser).'
+    : n === 'non-supportate' ? (IPHONE ? 'Su iPhone le notifiche arrivano solo con Giro sulla schermata Home e iOS 16.4 o più nuovo.' : 'Questo browser non riceve notifiche: i turni arrivano lo stesso, quando apri Giro.')
+    : 'Senza notifiche i turni arrivano lo stesso, quando apri Giro.';
+  return [barra, h('div', { class: 'titolo-grande' }, h('h1', {}, 'L’ufficio'), h('p', {}, `Collegato come ${uff.p.nome}`)),
+    stato.avviso && gruppoAvviso(),
+    h('section', { class: 'gruppo' }, h('div', { class: 'lista' },
+      n !== 'non-supportate' && h('button', { type: 'button', class: 'riga azione-riga', onclick: async e => {
+        e.currentTarget.disabled = true;
+        try { uff.notifiche = await ufficio.attivaNotifiche(uff.p); } catch (x) { stato.avviso = { errore: true, testo: x.message }; }
+        disegna();
+      } }, uff.notifiche === 'attive' ? 'Notifiche attive' : 'Attiva le notifiche'),
+      h('div', { class: 'riga' }, h('span', { class: 'corpo' }, h('div', { class: 'secondaria' }, testoNotifiche)))),
+    h('p', { class: 'piede' }, `${uff.p.email}. Turni e esiti viaggiano cifrati: il server non legge clienti, indirizzi, telefoni e note.`)),
+    h('section', { class: 'gruppo' }, h('div', { class: 'lista' },
+      h('button', { type: 'button', class: 'riga azione-riga rosso', onclick: async () => {
+        try { await uff.canale?.unsubscribe(); } catch { /* senza rete: il canale si chiude da solo */ }
+        await ufficio.esci(uff.p);
+        Object.assign(uff, { p: null, canale: null, gestori: null, notifiche: null });
+        stato.avviso = { testo: 'Uscito dall’ufficio. I giorni già arrivati restano in questo telefono.' };
+        disegna();
+      } }, 'Esci dall’ufficio')))];
+}
+
+// la notifica toccata: si apre il giorno dei turni (il service worker lo manda qui, o nell'indirizzo se l'app era chiusa)
+navigator.serviceWorker?.addEventListener('message', async e => {
+  if (e.data?.giorno && /^\d{4}-\d{2}-\d{2}$/.test(e.data.giorno)) { await aggiornaDallUfficio(); apriGiorno(e.data.giorno); }
+});
+
 // ---------- avvio ----------
 document.getElementById('file').addEventListener('change', async e => {
   const f = e.target.files[0];
@@ -703,13 +936,18 @@ async function aggiornaDalNegozio() {
   const p = await scaricaParete(id);
   if (p) await salvaCopertine(p).catch(() => {});
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) aggiornaDalNegozio(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { aggiornaDalNegozio(); aggiornaDallUfficio(); } });
+addEventListener('online', () => aggiornaDallUfficio());
 
 pulisci();
 aggiornaDalNegozio();
 stato.iso = scegliGiorno();
 stato.giorno = stato.iso ? leggiLS(CHIAVE + stato.iso) : null;
+// senza foglio si entra dalla sua parete, se ne ha una; le istruzioni restano a un tocco («Come si apre il foglio»)
+if (!stato.giorno && !location.hash && (await leggiCopertine()).length !== 0) history.replaceState(null, '', '#/casa');
 disegna();
+const giornoChiesto = new URLSearchParams(location.search).get('giorno'); // da una notifica toccata ad app chiusa
+collegaUfficio().then(() => { if (giornoChiesto) { apriGiorno(giornoChiesto); history.replaceState(null, '', './'); } });
 
 // Android: il PDF condiviso da WhatsApp arriva dal service worker (Web Share Target)
 if (new URLSearchParams(location.search).has('condiviso') && 'caches' in window) {

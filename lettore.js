@@ -13,7 +13,7 @@ const MESI = ['GENNAIO', 'FEBBRAIO', 'MARZO', 'APRILE', 'MAGGIO', 'GIUGNO', 'LUG
 const r1 = v => Math.round(v * 10) / 10;
 // ordine di lettura: dall'alto in basso, e sulla stessa riga (baseline entro 3 pt) da sinistra a destra
 const lettura = (p, q) => (Math.abs(p.y - q.y) > 3 ? q.y - p.y : p.x - q.x);
-const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+export const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
 
 // Da un documento pdf.js a testi e linee. `OPS` è pdfjs.OPS (passato da fuori: qui niente import di pdf.js).
 export async function estraiGeometria(doc, OPS) {

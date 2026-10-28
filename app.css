@@ -196,12 +196,8 @@ body:has(.avviso-basso) { padding-bottom: calc(84px + env(safe-area-inset-bottom
 .ingresso { position: fixed; inset: 0; z-index: 50; overflow: hidden; cursor: pointer; transition: opacity .25s;
   background: radial-gradient(120% 70% at 50% 0%, #22378a, #17286a 55%, #0c1640); }
 .ingresso.via { opacity: 0; }
-.ingresso .led { position: absolute; top: env(safe-area-inset-top, 0px); left: 0; height: 5px; width: 0; border-radius: 3px; background: #8dff6c;
-  box-shadow: 0 0 10px 2px #8dff6c, 0 0 40px 6px rgba(141, 255, 108, .45); animation: led-legge 1.2s ease-out forwards; }
-.ingresso .led.fatto { width: 100%; animation: none; transition: width .3s ease-out; }
-@keyframes led-legge { to { width: 85%; } }
 .ingresso .muro { position: absolute; inset: calc(env(safe-area-inset-top, 0px) + 20px) 10px 50px; display: grid; gap: 8px; grid-auto-rows: minmax(0, 1fr); }
-.ingresso .copertina { width: 100%; height: 100%; object-fit: cover; border: 2px solid #f7f0de; box-shadow: 0 6px 14px rgba(0, 0, 0, .5);
+.ingresso .copertina, .casa .copertina { width: 100%; height: 100%; object-fit: cover; border: 2px solid #f7f0de; box-shadow: 0 6px 14px rgba(0, 0, 0, .5);
   transform: rotate(var(--r)); opacity: 0; animation: attacca .28s var(--t) cubic-bezier(.3, 1.4, .5, 1) forwards; }
 @keyframes attacca { from { opacity: 0; transform: rotate(calc(var(--r) * -4)) scale(1.35); } to { opacity: 1; transform: rotate(var(--r)); } }
 .ingresso .balloon { position: absolute; left: 50%; bottom: 16%; width: min(86vw, 340px); transform: translateX(-50%) scale(.6); opacity: 0;
@@ -218,3 +214,32 @@ body:has(.avviso-basso) { padding-bottom: calc(84px + env(safe-area-inset-bottom
   .ingresso .copertina { opacity: 1; }
   .ingresso .balloon.su { opacity: 1; transform: translateX(-50%); }
 }
+
+/* ---------- i LED intorno al telefono: girano di colore in continuazione (fermi con «riduci movimento») ---------- */
+@property --giro-led { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.cornice-led { position: fixed; inset: 0; z-index: 52; pointer-events: none; padding: 4px; border-radius: 28px;
+  background: conic-gradient(from var(--giro-led), #ff2d55, #ff9500, #ffcc00, #34c759, #00c7be, #0a84ff, #bf5af2, #ff2d55);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
+  animation: led-gira 5s linear infinite; }
+.cornice-led.alone { padding: 10px; filter: blur(12px); opacity: .8; }
+@keyframes led-gira { to { --giro-led: 360deg; } }
+
+/* ---------- la home: la parete in mezzo, si entra nel giro da sotto ---------- */
+.casa { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; overflow: hidden;
+  background: radial-gradient(120% 70% at 50% 0%, #22378a, #17286a 55%, #0c1640); }
+.casa-muro { flex: 1; min-height: 0; display: grid; padding: calc(env(safe-area-inset-top, 0px) + 22px) 22px 6px; }
+.casa-muro .muro { position: static; inset: auto; height: 100%; display: grid; gap: 8px; }
+.casa .copertina { opacity: 1; animation: none; }
+.casa-vuota { align-self: center; text-align: center; color: rgba(255, 255, 255, .85); font: 24px/1.15 Bangers, Impact, sans-serif; letter-spacing: .5px; padding: 0 12px; }
+.casa-comandi { display: grid; gap: 10px; padding: 10px 22px calc(env(safe-area-inset-bottom, 0px) + 24px); }
+.casa-entra { min-height: 56px; border: 3px solid #121212; border-radius: 16px; background: #fff; color: #121212; font: 26px/1 Bangers, Impact, sans-serif; letter-spacing: .5px; box-shadow: 4px 4px 0 #121212; }
+.casa-entra:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 #121212; }
+.casa-aiuto { min-height: 44px; border: 0; background: none; color: #fff; font-size: .875rem; text-decoration: underline; }
+.casa-riga { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.casa-piccolo { min-height: 44px; display: grid; place-items: center; text-align: center; border: 0; border-radius: 12px; background: rgba(255, 255, 255, .14); color: #fff; font-size: .8125rem; font-weight: 600; text-decoration: none; padding: 4px; }
+@media (prefers-reduced-motion: reduce) { .cornice-led { animation: none; } }
+
+/* l'ufficio: collegamento e notifiche */
+.azione-riga.rosso { color: var(--rosso); }
+.errore-testo { color: var(--rosso); min-height: 1em; }

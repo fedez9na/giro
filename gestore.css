@@ -1,0 +1,97 @@
+/* La pagina dell'ufficio: un foglio di calcolo pulito, come quello che compilano già. Colori di sistema, chiaro o scuro dal computer. */
+:root {
+  --sfondo: #f2f2f7; --carta: #ffffff; --testo: #111114; --testo-2: #55555c; --griglia: #d1d1d6; --testa: #f7f7f9;
+  --tinta: #0040dd; --tinta-tenue: rgba(0, 64, 221, .1); --su-tinta: #ffffff;
+  --verde: #1e7b34; --verde-tenue: #e3f4e7; --rosso: #d70015; --rosso-tenue: #fde7e9; --giallo: #8a5a00; --giallo-tenue: #fff3d6;
+  --font: -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --sfondo: #000000; --carta: #1c1c1e; --testo: #f2f2f7; --testo-2: #aeaeb2; --griglia: #3a3a3c; --testa: #242426;
+    --tinta: #409cff; --tinta-tenue: rgba(64, 156, 255, .16); --su-tinta: #000000;
+    --verde: #30db5b; --verde-tenue: #10301a; --rosso: #ff6961; --rosso-tenue: #3a1416; --giallo: #ffd60a; --giallo-tenue: #332b0a; }
+}
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--sfondo); color: var(--testo); font: 15px/1.35 var(--font); }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; }
+.nascosto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.pieno { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 20px; border: 0; border-radius: 10px;
+  background: var(--tinta); color: var(--su-tinta); font-weight: 600; text-decoration: none; }
+.pieno:disabled { opacity: .45; cursor: default; }
+.piccolo { min-height: 36px; padding: 0 12px; border: 1px solid var(--griglia); border-radius: 8px; background: var(--carta); color: var(--tinta); }
+.link { border: 0; background: none; color: var(--tinta); padding: 0; text-decoration: underline; }
+
+/* accesso */
+.accesso { max-width: 380px; margin: 12vh auto 0; padding: 24px; background: var(--carta); border-radius: 14px; display: grid; gap: 10px; }
+.accesso h1 { font-size: 1.6rem; }
+.accesso .sotto { color: var(--testo-2); margin-bottom: 8px; }
+.accesso form { display: grid; gap: 6px; }
+label { font-size: .875rem; color: var(--testo-2); margin-top: 6px; }
+.accesso input, dialog input { min-height: 44px; padding: 0 12px; border: 1px solid var(--griglia); border-radius: 8px; background: var(--carta); }
+.messaggio.errore, .errore[role=alert] { color: var(--rosso); min-height: 1.2em; }
+
+/* testa e persone */
+.testa { display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: var(--carta); border-bottom: 1px solid var(--griglia); position: sticky; top: 0; z-index: 3; }
+.testa strong { font-size: 1.05rem; margin-right: auto; }
+.testa .chi { color: var(--testo-2); }
+main { padding: 16px 20px 40px; max-width: 1500px; margin: 0 auto; }
+.persone { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.persona { display: grid; text-align: left; min-height: 48px; padding: 6px 14px; border: 1px solid var(--griglia); border-radius: 10px; background: var(--carta); }
+.persona[aria-pressed=true] { border-color: var(--tinta); box-shadow: inset 0 0 0 1px var(--tinta); background: var(--tinta-tenue); }
+.persona .nome { font-weight: 600; }
+.persona .segno { font-size: .78rem; color: var(--testo-2); }
+.persona .segno.fatto { color: var(--verde); }
+.persona.aggiungi { color: var(--tinta); align-content: center; }
+
+.giorno { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.giorno h1 { font-size: 1.35rem; margin: 0 8px; }
+.giorno h1::first-letter { text-transform: uppercase; }
+.giorno input[type=date] { min-height: 36px; padding: 0 8px; border: 1px solid var(--griglia); border-radius: 8px; background: var(--carta); }
+.comandi { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+.stato { margin-right: auto; padding: 6px 10px; border-radius: 8px; color: var(--testo-2); }
+.stato.ok { background: var(--verde-tenue); color: var(--verde); }
+.stato.attesa { background: var(--giallo-tenue); color: var(--giallo); }
+.stato.errore { background: var(--rosso-tenue); color: var(--rosso); }
+.avviso { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin-bottom: 10px; border-radius: 10px; background: var(--tinta-tenue); }
+.avviso.errore { background: var(--rosso-tenue); color: var(--rosso); }
+.avviso ul { padding-left: 18px; }
+
+/* il foglio */
+.foglio { overflow-x: auto; background: var(--carta); border: 1px solid var(--griglia); border-radius: 10px; }
+table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 1150px; table-layout: fixed; } /* separate: con collapse il bordo esterno sporgeva di mezzo pixel e compariva la barra */
+th { position: sticky; top: 0; background: var(--testa); font-size: .8rem; font-weight: 600; text-align: left; color: var(--testo-2); padding: 8px 6px; border-bottom: 1px solid var(--griglia); }
+td { border-bottom: 1px solid var(--griglia); border-right: 1px solid var(--griglia); padding: 0; height: 40px; }
+td:last-child { border-right: 0; }
+td input { width: 100%; height: 40px; border: 0; border-radius: 0; padding: 0 6px; background: transparent; font-size: 13.5px; }
+td input:focus { outline: 2px solid var(--tinta); outline-offset: -2px; background: var(--tinta-tenue); }
+td.n, th.n { width: 32px; text-align: center; color: var(--testo-2); font-size: .8rem; }
+/* le larghezze fisse ai numeri, il resto ai testi: un comune lungo (VENEGONO INFERIORE) ci sta intero */
+th.da, th.a { width: 84px; } th.cliente { width: 12%; } th.tipologia { width: 11.5%; } th.comune { width: 14%; }
+th.via { width: 10.5%; } th.telefono { width: 108px; } th.esito { width: 150px; } th.togli { width: 36px; } /* le note prendono il resto */
+td.esito { padding: 0 8px; font-size: .8125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+td.esito.ok { color: var(--verde); font-weight: 600; background: var(--verde-tenue); }
+td.esito.ko { color: var(--rosso); font-weight: 600; background: var(--rosso-tenue); }
+button.togli { width: 36px; height: 40px; border: 0; background: none; color: var(--testo-2); font-size: 1.2rem; }
+button.togli:hover { color: var(--rosso); }
+tbody tr:last-child button.togli { visibility: hidden; } /* la riga vuota in fondo non si toglie */
+.nota { color: var(--testo-2); font-size: .85rem; margin-top: 10px; }
+.vuoto { max-width: 520px; margin: 8vh auto; text-align: center; display: grid; gap: 12px; justify-items: center; }
+
+/* finestre */
+dialog.finestra { width: min(460px, calc(100vw - 32px)); border: 0; border-radius: 14px; padding: 22px; background: var(--carta); color: var(--testo); }
+dialog::backdrop { background: rgba(0, 0, 0, .35); }
+dialog form { display: grid; gap: 4px; }
+dialog h2 { font-size: 1.2rem; margin-bottom: 6px; }
+.con-tasto { display: flex; gap: 8px; } .con-tasto input { flex: 1; font-family: ui-monospace, Consolas, monospace; }
+.credenziali { font: 1rem/1.6 ui-monospace, Consolas, monospace; background: var(--testa); padding: 12px; border-radius: 8px; margin: 10px 0; white-space: pre-wrap; user-select: all; }
+.tasti { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+
+@media (max-width: 700px) {
+  main { padding: 12px; }
+  .testa { padding: 8px 12px; flex-wrap: wrap; }
+  .giorno h1 { width: 100%; margin: 4px 0 0; order: -1; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

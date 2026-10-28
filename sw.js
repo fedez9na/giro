@@ -1,6 +1,6 @@
 // Senza rete: i file dell'app stanno in cache e si servono da lì. Il PDF condiviso (Android) arriva qui come POST.
-const VERSIONE = 'giro-6';
-const FILE = ['./', 'index.html', 'app.css', 'app.js', 'lettore.js', 'giornata.js', 'compila.js', 'link.js', 'margini.js', 'calendario.js', 'testi.js', 'meteo.js', 'parete.js', 'comuni.json', 'strade.json', 'vendor/Bangers-Regular.ttf',
+const VERSIONE = 'giro-7';
+const FILE = ['./', 'index.html', 'app.css', 'app.js', 'lettore.js', 'giornata.js', 'compila.js', 'link.js', 'margini.js', 'calendario.js', 'testi.js', 'meteo.js', 'parete.js', 'turni.js', 'cifra.js', 'ufficio.js', 'vendor/supabase.js', 'comuni.json', 'strade.json', 'vendor/Bangers-Regular.ttf',
   'manifest.webmanifest', 'icona.svg', 'icona-192.png', 'icona-512.png',
   'vendor/pdf.min.mjs', 'vendor/pdf.worker.min.mjs', 'vendor/pdf-lib.esm.min.js'];
 
@@ -9,6 +9,25 @@ self.addEventListener('install', e => e.waitUntil(caches.open(VERSIONE)
   .then(c => c.addAll(FILE.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(
   caches.keys().then(k => Promise.all(k.filter(n => n !== VERSIONE && n !== 'condivisi' && n !== 'parete').map(n => caches.delete(n)))).then(() => self.clients.claim())));
+
+// La notifica dell'ufficio: il testo lo scrive il server dalla data, senza dati dei clienti. iPhone vuole sempre una notifica visibile.
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data?.json() ?? {}; } catch { /* testo non JSON: notifica generica */ }
+  const giorno = /^\d{4}-\d{2}-\d{2}$/.test(d.data ?? '') ? d.data : '';
+  e.waitUntil(self.registration.showNotification(String(d.titolo ?? 'Turni pubblicati').slice(0, 60), {
+    body: String(d.testo ?? 'L’ufficio ha pubblicato i turni').slice(0, 160), icon: 'icona-192.png', badge: 'icona-192.png',
+    tag: `turni-${giorno}`, renotify: true, data: { giorno } }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const giorno = e.notification.data?.giorno ?? '';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(lista => {
+    const app = lista.find(c => new URL(c.url).pathname.endsWith('/') || c.url.includes('index.html'));
+    if (app) { app.postMessage({ giorno }); return app.focus(); }
+    return self.clients.openWindow(giorno ? `./?giorno=${giorno}` : './');
+  }));
+});
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);

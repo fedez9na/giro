@@ -2,6 +2,8 @@
 // cliente + tipologia + comune (l'id del lettore), così un foglio nuovo non cancella gli esiti.
 
 const ESITO_VUOTO = { stato: null, motivoKo: '', euroExtra: '' };
+// «8.30-9» del PDF e «8:30-9:00» dell'ufficio sono lo stesso orario: si confrontano le ore lette, il testo solo se non si legge
+const ora = o => (o.da ? `${o.da}-${o.a}` : o.testo);
 
 export function nuovaGiornata(foglio) {
   return {
@@ -23,7 +25,7 @@ export function unisci(giornata, foglio) {
     if (!v || v.tolto) {
       cambi.push({ tipo: 'aggiunto', n: nuovo.n, id: nuovo.id });
     } else {
-      if (v.orario.testo !== nuovo.orario.testo) cambi.push({ tipo: 'orario', n: nuovo.n, id: nuovo.id, prima: v.orario.testo, dopo: nuovo.orario.testo });
+      if (ora(v.orario) !== ora(nuovo.orario)) cambi.push({ tipo: 'orario', n: nuovo.n, id: nuovo.id, prima: v.orario.testo, dopo: nuovo.orario.testo });
       if (v.note !== nuovo.note) cambi.push({ tipo: 'note', n: nuovo.n, id: nuovo.id, prima: v.note, dopo: nuovo.note });
     }
     return { ...structuredClone(nuovo), esito: v ? { ...v.esito } : { ...ESITO_VUOTO }, aggiunte: { ...v?.aggiunte }, tolto: false };
