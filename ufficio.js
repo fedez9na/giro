@@ -46,6 +46,7 @@ const togliChiave = id => idb('readwrite', s => s.delete(id)).catch(() => {});
 const leggiMemoria = () => { try { return JSON.parse(localStorage.getItem(MEMORIA)); } catch { return null; } };
 export const collegato = () => !!leggiMemoria(); // senza caricare niente: chi non si è mai collegato non scarica la libreria
 export const ruoloCollegato = () => leggiMemoria()?.ruolo ?? null; // 'gestore' | 'dipendente' | null
+export const collegatoCome = () => leggiMemoria(); // { id, nome, … } di chi è collegato qui, anche senza rete
 const scriviMemoria = p => { try { localStorage.setItem(MEMORIA, JSON.stringify(p)); } catch { /* pieno: si rilegge dal server */ } };
 
 const MESSAGGI = { 'Invalid login credentials': 'Email o password non giuste' };
@@ -175,6 +176,22 @@ export async function mandaEsito(p, iso, riga, esito, destinatari) {
   const busta = await sigilla(esito, [...destinatari, { kid: p.kid, pubblica: p.pubblica }], contesto('esiti', p.id, iso, riga));
   const { error } = await sb.from('esiti').upsert({ dipendente: p.id, data: iso, riga, busta });
   if (error) throw errore(error, 'Esito non mandato');
+}
+
+// La sua stanza (scritta, colore, parete composta, collegamento al poster shop), chiusa con la sua chiave: dall'app i gestori non la leggono (chi conosce
+// la sua password sì: oggi la sceglie il gestore). La busta non è firmata: che la scriva solo lui lo garantisce la regola sul server.
+// null se non c'è o se è chiusa con una chiave vecchia (password cambiata): allora vale quella del telefono.
+export async function miaStanza(p) {
+  const sb = await server();
+  const { data, error } = await sb.from('stanze').select('busta').eq('persona', p.id).maybeSingle();
+  if (error) throw errore(error, 'Non riesco a leggere la tua stanza');
+  try { return data ? await apri(data.busta, p.chiave, contesto('stanze', p.id)) : null; } catch { return null; }
+}
+export async function salvaStanza(p, stanza) {
+  const sb = await server();
+  const busta = await sigilla(stanza, [{ kid: p.kid, pubblica: p.pubblica }], contesto('stanze', p.id));
+  const { error } = await sb.from('stanze').upsert({ persona: p.id, busta });
+  if (error) throw errore(error, 'La tua stanza non è salvata sul server');
 }
 
 // Canali PRIVATI: li apre solo chi la regola sul server lascia entrare (turni:<id> il dipendente, esiti:ufficio i gestori).

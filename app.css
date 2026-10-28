@@ -187,6 +187,7 @@ body:has(.avviso-basso) { padding-bottom: calc(84px + env(safe-area-inset-bottom
 
 @media (prefers-reduced-motion: no-preference) {
   .schermo { animation: entra .22s cubic-bezier(.2, .8, .2, 1); }
+  .schermo:has(> .casa) { animation: none; } /* lo spostamento schiaccia la stanza (fissa) per 0,22 s: un lampo nero */
   @keyframes entra { from { opacity: .4; transform: translateX(16px); } }
 }
 @media (min-width: 640px) { #app { max-width: 600px; margin: 0 auto; } }
@@ -218,7 +219,7 @@ body:has(.avviso-basso) { padding-bottom: calc(84px + env(safe-area-inset-bottom
 /* ---------- i LED intorno al telefono: girano di colore in continuazione (fermi con «riduci movimento») ---------- */
 @property --giro-led { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 .cornice-led { position: fixed; inset: 0; z-index: 52; pointer-events: none; padding: 4px; border-radius: 28px;
-  background: conic-gradient(from var(--giro-led), #ff2d55, #ff9500, #ffcc00, #34c759, #00c7be, #0a84ff, #bf5af2, #ff2d55);
+  background: var(--led-sfondo, conic-gradient(from var(--giro-led), #ff2d55, #ff9500, #ffcc00, #34c759, #00c7be, #0a84ff, #bf5af2, #ff2d55)); /* il colore scelto da lui (stanza.js) */
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
   animation: led-gira 5s linear infinite; }
@@ -239,6 +240,51 @@ body:has(.avviso-basso) { padding-bottom: calc(84px + env(safe-area-inset-bottom
 .casa-riga { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .casa-piccolo { min-height: 44px; display: grid; place-items: center; text-align: center; border: 0; border-radius: 12px; background: rgba(255, 255, 255, .14); color: #fff; font-size: .8125rem; font-weight: 600; text-decoration: none; padding: 4px; }
 @media (prefers-reduced-motion: reduce) { .cornice-led { animation: none; } }
+
+/* ---------- la sua insegna al neon sopra i poster; la stanza vuota della prima apertura ---------- */
+.insegna { display: block; width: calc(100% - 44px); margin: calc(env(safe-area-inset-top, 0px) + 14px) 22px 0; padding: 6px 0 8px; border: 0; background: none;
+  text-align: center; white-space: nowrap; overflow: hidden; color: #fff; letter-spacing: 2px;
+  font: clamp(22px, calc((100vw - 60px) / (var(--lettere) * .6)), 56px)/1.05 Bangers, Impact, sans-serif;
+  text-shadow: 0 0 2px #fff, 0 0 8px var(--neon), 0 0 18px var(--neon), 0 0 36px var(--neon); }
+@media (min-width: 640px) { .insegna { font-size: clamp(22px, calc(540px / (var(--lettere) * .6)), 56px); } }
+button.insegna { cursor: pointer; border-radius: 14px; }
+button.insegna:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.insegna.spenta { color: rgba(255, 255, 255, .1); -webkit-text-stroke: 1px rgba(255, 255, 255, .3); text-shadow: none; }
+.casa .insegna + .casa-muro { padding-top: 4px; }
+.stanza-vuota { --led-sfondo: #2b3352; } /* le luci spente: un colore scuro fisso */
+.muro-vuoto { align-self: center; justify-self: center; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: min(100%, 300px); }
+.muro-vuoto span { aspect-ratio: 2 / 3; border: 2px dashed rgba(255, 255, 255, .28); border-radius: 4px; transform: rotate(-1.5deg); }
+.muro-vuoto span:nth-child(2n) { transform: rotate(1.5deg); }
+.casa-riga.due { grid-template-columns: repeat(2, 1fr); }
+@media (prefers-reduced-motion: no-preference) {
+  .insegna[data-colore="arcobaleno"]:not(.spenta) { animation: neon-gira 8s linear infinite; }
+  .insegna.accende { animation: neon-accende 1.1s steps(1) both; }
+  .insegna.accende[data-colore="arcobaleno"] { animation: neon-accende 1.1s steps(1) both, neon-gira 8s linear 1.1s infinite; }
+}
+@keyframes neon-gira { to { filter: hue-rotate(360deg); } }
+@keyframes neon-accende { 0%, 14%, 34% { opacity: .15; } 7%, 24%, 48%, 100% { opacity: 1; } }
+
+/* scritta e colore: un foglio dal basso, l'insegna in cima cambia mentre scrive */
+.stanza-dialogo { margin: auto auto 0; width: 100%; max-width: 600px; border: 0; border-radius: 22px 22px 0 0; padding: 18px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  background: #12131a; color: #fff; }
+.stanza-dialogo::backdrop { background: rgba(0, 0, 0, .6); }
+.stanza-dialogo h2 { font-size: 1.0625rem; text-align: center; }
+.stanza-vista { margin: 6px 0 12px; border-radius: 14px; background: radial-gradient(120% 90% at 50% 0%, #22378a, #0c1640); overflow: hidden; }
+.stanza-vista .insegna { width: calc(100% - 24px); margin: 10px 12px; }
+.stanza-campo { display: grid; gap: 6px; font-size: .875rem; color: rgba(255, 255, 255, .75); }
+.stanza-campo input { font: inherit; font-size: 1.0625rem; color: #fff; background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .2); border-radius: 12px; min-height: 48px; padding: 0 14px; }
+.stanza-colori { border: 0; padding: 0; margin: 14px 0 0; display: flex; flex-wrap: wrap; gap: 10px; }
+.stanza-colori legend { font-size: .875rem; color: rgba(255, 255, 255, .75); margin-bottom: 8px; padding: 0; }
+.stanza-colori .colore { position: relative; width: 44px; height: 44px; border-radius: 50%; background: var(--c); cursor: pointer; box-shadow: 0 0 10px var(--c, transparent); }
+.stanza-colori .colore[data-colore="arcobaleno"] { background: conic-gradient(#ff2d55, #ff9500, #ffcc00, #34c759, #00c7be, #0a84ff, #bf5af2, #ff2d55); }
+/* il pallino è il campo stesso: il contorno della scelta si vede anche dove manca :has() (Firefox prima del 121) */
+.stanza-colori .colore input { appearance: none; -webkit-appearance: none; position: absolute; inset: 0; margin: 0; border-radius: 50%; cursor: pointer; }
+.stanza-colori .colore input:checked { outline: 3px solid #fff; outline-offset: 3px; }
+.stanza-colori .colore input:focus-visible { outline: 3px dashed #fff; outline-offset: 3px; }
+.stanza-nota { font-size: .8125rem; color: rgba(255, 255, 255, .6); margin: 14px 0 0; }
+.stanza-tasti { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.stanza-tasti button { min-height: 50px; border: 0; border-radius: 14px; font: inherit; font-weight: 600; background: rgba(255, 255, 255, .12); color: #fff; }
+.stanza-tasti .pieno { background: #fff; color: #121212; }
 
 /* l'ufficio: collegamento e notifiche */
 .azione-riga.rosso { color: var(--rosso); }

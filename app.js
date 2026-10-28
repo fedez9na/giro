@@ -7,11 +7,12 @@ import { compilaPdf } from './compila.js';
 import { naviga, chiama, stoArrivando, testoArrivo } from './link.js';
 import { puntoStretto, quantoManca, comuneVicino, minutiGuida, durata } from './margini.js';
 import { creaIcs } from './calendario.js';
-import { mostraParete, prepara, salvaCopertine, leggiCopertine, leggiCodice, leggiCollegamento, scaricaParete, costruisciMuro, liberaMuro, cornice } from './parete.js';
+import { mostraParete, prepara, salvaCopertine, leggiCopertine, leggiCopertineAdagio, leggiCodice, leggiCollegamento, scaricaParete, costruisciMuro, liberaMuro, cornice } from './parete.js';
 import { hm, nomeComune, tipo, notePer } from './testi.js';
 import { chiave, meteoDelLavoro, etichetta, riassunto, leggiMeteo, leggiAllerte, leggiMeteoSito, daSito, sitoValido, DOPO, cieloDelLavoro, alBuio } from './meteo.js';
 import { foglioDaTurni, adottaId } from './turni.js';
 import * as ufficio from './ufficio.js';
+import { COLORI, MAX, lettere, pulisci as pulisciScritta, valida, piuNuova, prossimaOra, scrittaDi, aCodice, leggiStanza, scriviStanza, dimenticaStanza, luci } from './stanza.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs';
 // grammatica del telefono: Material su Android, iOS altrove; ?os=ios|android la forza (per le prove)
@@ -109,6 +110,8 @@ function scegliCopertine() {
         return disegna();
       }
       await salvaCopertine(copertine);
+      localStorage.removeItem(COLLEGAMENTO); // ha scelto le sue foto: il poster shop non deve scriverci sopra alla prossima apertura
+      pareteCambiata();
       stato.avviso = { testo: `Parete pronta: ${copertine.length} copertine, solo in questo telefono. La vedi ogni volta che apri il foglio del mattino.` };
       disegna();
       (await mostraParete())?.prima('Così ti accoglie ogni mattina!', '');
@@ -133,6 +136,7 @@ async function incollaParete() {
     scriviLS(COLLEGAMENTO, id);
     const scaricata = await scaricaParete(id);
     if (scaricata) await salvaCopertine(scaricata).catch(() => {});
+    pareteCambiata(); // anche il collegamento viaggia nella stanza
     stato.avviso = scaricata
       ? { testo: `Collegato al poster shop: ${scaricata.tessere.length} copertine. Ogni volta che pubblichi, la parete arriva da sola.` }
       : { testo: 'Collegato al poster shop. Non c’è ancora una parete pubblicata: tocca «Pubblica su Giro» e arriva da sola.' };
@@ -147,6 +151,7 @@ async function incollaParete() {
   }
   try {
     await salvaCopertine(parete);
+    pareteCambiata();
   } catch {
     stato.avviso = { errore: true, testo: 'Non riesco a salvare la parete in questo telefono.' };
     return disegna();
@@ -689,18 +694,24 @@ function schermoScheda(i, focusTelefono) {
 // La home: la sua parete di copertine in mezzo, i LED che girano intorno al telefono, e da lì si entra nel giro.
 // La parete arriva dopo (memoria del telefono): ha il suo posto, e i tasti stanno sotto, fuori dalla sua portata.
 let muroCasa = null;
+const INSEGNA = 70; // lo spazio dell'insegna sopra la parete
 function schermoCasa() {
   const posto = h('div', { class: 'casa-muro' });
-  costruisciMuro(innerWidth - 44, innerHeight - (stato.giorno ? 230 : 284)).then(m => { // senza foglio c'è una riga in più sotto
+  costruisciMuro(innerWidth - 44, innerHeight - (stato.giorno ? 230 : 284) - INSEGNA).then(m => { // senza foglio c'è una riga in più sotto
     if (location.hash !== '#/casa') return liberaMuro(m);
     muroCasa = m;
     if (m?.colore) posto.closest('.casa').style.background = m.colore;
     posto.replaceChildren(m ? m.muro : h('p', { class: 'casa-vuota' }, 'La tua parete è vuota: componila sul poster shop o scegli le copertine dalle foto'));
   });
   const shop = h('a', { class: 'casa-piccolo', href: 'https://immersive-poster-shop.vercel.app/parete', target: '_blank', rel: 'noopener' }, 'Componi la parete');
-  return [h('div', { class: 'casa' }, posto,
+  const tecnico = ufficio.ruoloCollegato() === 'dipendente'; // i turni gli arrivano dall'ufficio: niente PDF da aprire
+  const s = miaStanza(), testo = scrittaDi(s, ufficio.collegatoCome()?.nome);
+  const scritta = insegna(testo, s?.colore ?? 'arcobaleno', uff.accendi ? 'accende' : '', { onclick: apriStanza, 'aria-label': `${testo}: cambia la scritta e il colore delle luci` });
+  uff.accendi = false;
+  return [h('div', { class: 'casa' }, scritta, posto,
     h('div', { class: 'casa-comandi' },
-      h('button', { type: 'button', class: 'casa-entra', onclick: () => (stato.giorno ? vai('#/') : apriFile()) }, stato.giorno ? `Il giro di ${titoloGiorno().toLowerCase()}` : 'Apri il foglio dei turni'),
+      h('button', { type: 'button', class: 'casa-entra', onclick: () => (stato.giorno ? vai('#/') : tecnico ? vai('#/ufficio') : apriFile()) },
+        stato.giorno ? `Il giro di ${titoloGiorno().toLowerCase()}` : tecnico ? 'Aspetto i turni dall’ufficio' : 'Apri il foglio dei turni'),
       h('div', { class: 'casa-riga' }, shop,
         h('button', { type: 'button', class: 'casa-piccolo', onclick: incollaParete }, leggiLS(COLLEGAMENTO) ? 'Incolla un codice' : 'Collega lo shop'),
         h('button', { type: 'button', class: 'casa-piccolo', onclick: scegliCopertine }, 'Dalle foto')),
@@ -708,8 +719,99 @@ function schermoCasa() {
     ...cornice())];
 }
 
+// ---------- la sua stanza: la scritta sull'insegna e il colore delle luci (Federico, 28/10) ----------
+// L'insegna al neon sopra i poster, come le targhe col nome dei camionisti: spenta nella stanza ancora vuota, poi la sua
+// scritta nel suo colore. Le lettere si rimpiccioliscono con la lunghezza, così anche 18 stanno su un telefono stretto.
+function insegna(testo, colore, classi = '', props = {}) {
+  const quante = lettere(testo).length;
+  const e = h(props.onclick ? 'button' : 'div', { type: props.onclick ? 'button' : null, ...props, class: `insegna ${classi}`.trim(), 'data-colore': colore,
+    style: `--neon: ${COLORI[colore] ?? '#ff2d55'}; --lettere: ${Math.max(5, quante)}` }, testo);
+  // la stima per lettere vale per le lettere medie: le «M» sono più larghe, quindi a schermo si misura e si stringe finché ci sta
+  // (di nuovo quando arriva il Bangers: quello provvisorio è più stretto e la prima misura passerebbe)
+  const stringi = () => {
+    for (let px = parseFloat(getComputedStyle(e).fontSize); e.isConnected && e.scrollWidth > e.clientWidth && px > 6; px -= 2) e.style.fontSize = `${px - 2}px`;
+  };
+  requestAnimationFrame(stringi);
+  document.fonts?.ready.then(() => requestAnimationFrame(stringi));
+  return e;
+}
+const miaStanza = () => leggiStanza(ufficio.collegatoCome()?.id ?? null);
+
+// si sceglie guardando l'insegna che cambia; si salva nel telefono e, se è collegato, sul server chiusa con la sua chiave
+function apriStanza() {
+  const s = miaStanza(), nome = ufficio.collegatoCome()?.nome;
+  let colore = s?.colore ?? 'arcobaleno';
+  const campo = h('input', { type: 'text', value: s?.scritta ?? '', placeholder: scrittaDi(null, nome), autocomplete: 'off', autocapitalize: 'words', enterkeyhint: 'done' });
+  const vista = h('div', { class: 'stanza-vista', 'aria-hidden': 'true' });
+  const ridisegna = () => vista.replaceChildren(insegna(scrittaDi({ scritta: pulisciScritta(campo.value) }, nome), colore));
+  campo.addEventListener('input', () => { const l = lettere(campo.value); if (l.length > MAX) campo.value = l.slice(0, MAX).join(''); ridisegna(); });
+  const colori = Object.keys(COLORI).map(k => h('label', { class: 'colore', 'data-colore': k, style: COLORI[k] ? `--c: ${COLORI[k]}` : null, title: k },
+    h('input', { type: 'radio', name: 'colore', value: k, checked: k === colore, 'aria-label': k, onchange: () => { colore = k; ridisegna(); } })));
+  const d = h('dialog', { class: 'stanza-dialogo', 'aria-labelledby': 'stanza-titolo' },
+    h('form', { method: 'dialog', onsubmit: () => salvaMiaStanza(campo.value, colore) }, // l'unico tasto che invia è Salva (anche Invio)
+      h('h2', { id: 'stanza-titolo' }, 'La tua insegna'),
+      vista,
+      h('label', { class: 'stanza-campo' }, h('span', {}, 'Cosa c’è scritto'), campo),
+      h('fieldset', { class: 'stanza-colori' }, h('legend', {}, 'Il colore delle luci'), colori),
+      h('p', { class: 'stanza-nota' }, ufficio.collegato() ? 'Si salva col tuo account: la ritrovi anche su un telefono nuovo.' : 'Resta in questo telefono.'),
+      h('div', { class: 'stanza-tasti' },
+        h('button', { type: 'button', onclick: () => d.close() }, 'Annulla'),
+        h('button', { type: 'submit', class: 'pieno' }, 'Salva'))));
+  d.addEventListener('close', () => d.remove());
+  document.body.append(d);
+  ridisegna();
+  d.showModal();
+}
+
+function salvaMiaStanza(scritta, colore) {
+  const id = ufficio.collegatoCome()?.id ?? null;
+  scriviStanza({ scritta: pulisciScritta(scritta), colore: Object.hasOwn(COLORI, colore) ? colore : 'arcobaleno', t: prossimaOra(leggiStanza(id)) }, id);
+  disegna();
+  if (uff.p) mandaStanza(uff.p);
+}
+
+// sul server: scritta, colore e la parete composta sul poster shop (le foto no, restano nel telefono)
+async function mandaStanza(p) {
+  const s = leggiStanza(p.id);
+  if (!s) return;
+  try {
+    scriviStanza(s, p.id); // quella fatta prima di collegarsi diventa sua
+    await ufficio.salvaStanza(p, { v: 1, scritta: s.scritta, colore: s.colore, t: s.t, parete: aCodice(await leggiCopertineAdagio()), negozio: leggiLS(COLLEGAMENTO) });
+  } catch (e) { console.warn('stanza', e); } // resta nel telefono: alla prossima apertura è ancora la più nuova e riparte
+}
+
+// una parete nuova è una modifica della stanza: per chi è collegato va anche sul server
+function pareteCambiata() {
+  if (!uff.p) return;
+  const s = leggiStanza(uff.p.id);
+  scriviStanza({ ...(s ?? { scritta: '', colore: 'arcobaleno' }), t: prossimaOra(s) }, uff.p.id);
+  mandaStanza(uff.p);
+}
+
+// all'apertura e quando si collega: vince la più nuova fra il telefono e il server
+async function sincronizzaStanza() {
+  const p = uff.p;
+  if (!p || !navigator.onLine) return;
+  try {
+    const remota = valida(await ufficio.miaStanza(p));
+    const chi = piuNuova(leggiStanza(p.id), remota);
+    if (chi === 'locale') return mandaStanza(p);
+    if (chi !== 'remota') return;
+    scriviStanza(remota, p.id);
+    // la parete arrivata copre solo una parete vuota o composta: le foto esistono solo qui, e un telefono collegato al
+    // poster shop prende la parete dal suo collegamento (sennò due telefoni con due codici se la rubano a ogni apertura)
+    // parete e collegamento al negozio arrivano solo dove la parete è vuota o composta: sopra le foto mai (il collegamento
+    // porterebbe la parete del negozio alla riapertura dopo: il critico, 3° giro)
+    const qui = await leggiCopertineAdagio(), prende = !leggiLS(COLLEGAMENTO) && !(Array.isArray(qui) && qui.length);
+    if (prende && remota.parete) await salvaCopertine(remota.parete).catch(() => {});
+    if (prende && remota.negozio) scriviLS(COLLEGAMENTO, remota.negozio); // dopo «Esci» e rientro, «Pubblica su Giro» torna da solo
+    if (location.hash === '#/casa') disegna();
+  } catch (e) { console.warn('stanza', e); }
+}
+
 function disegna() {
   const app = document.getElementById('app');
+  luci(miaStanza()?.colore); // le luci di chi è collegato adesso (o di nessuno): mai quelle di chi è uscito
   liberaMuro(muroCasa); muroCasa = null;
   const m = location.hash.match(/^#\/i\/(\d+)(\?telefono)?/);
   const i = m && stato.giorno?.giornata.interventi[+m[1]];
@@ -745,7 +847,7 @@ async function manda() {
 // ---------- l'ufficio: i turni arrivano da soli, gli esiti tornano ----------
 // I turni arrivano chiusi per la chiave di questo telefono (ufficio.js) e qui diventano la giornata, come un foglio letto.
 // All'ufficio torna solo ciò che il loro foglio chiede (esito, motivo KO, euro extra), un intervento alla volta.
-const uff = { p: null, canale: null, gestori: null, notifiche: null, rifare: false };
+const uff = { p: null, canale: null, gestori: null, notifiche: null, rifare: false, accendi: false };
 const IPHONE = /iP(hone|ad|od)/.test(navigator.userAgent) || document.documentElement.dataset.os === 'ios' && navigator.maxTouchPoints > 1;
 const installata = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 
@@ -765,6 +867,8 @@ async function collegaUfficio() {
       stato.avviso = { errore: true, testo: 'L’ufficio ha cambiato la tua password: collegati di nuovo con quella nuova.' };
       return disegna();
     }
+    if (location.hash === '#/ufficio') disegna();
+    sincronizzaStanza();
     uff.canale ??= await ufficio.ascolta(`turni:${uff.p.id}`, 'turni', async r => riceviTurni(await ufficio.apriTurni(uff.p, [r])));
     await aggiornaDallUfficio();
     if (ufficio.statoNotifiche() === 'permesse') uff.notifiche = await ufficio.attivaNotifiche(uff.p).catch(() => null); // già permesse: l'iscrizione si rinnova senza chiedere
@@ -863,25 +967,27 @@ function riempiEsiti() { for (const el of document.querySelectorAll('[data-esiti
 // Le tre strade, all'apertura finché non se n'è presa una (Federico, 28/10): l'ufficio, il tecnico collegato, il foglio senza account.
 const MODO = 'giro:modo'; // 'tecnico' | 'libero': si sceglie una volta, «Esci dall'ufficio» la rimette
 const testoUfficio = collegato => (ufficio.ruoloCollegato() === 'gestore' ? 'Pagina dell’ufficio' : ufficio.collegato() ? collegato : 'Collegati all’ufficio');
+// La prima schermata è la stessa stanza, ancora da riempire (Federico, 28/10): l'insegna spenta, la parete coi posti vuoti,
+// le luci basse. Chi entra la accende: la sua scritta, i suoi poster, il suo colore.
 function schermoScelta() {
-  const strada = (titolo, sotto, fn) => h('button', { type: 'button', class: 'riga azione-riga scelta', onclick: fn },
-    h('span', { class: 'corpo' }, h('div', { class: 'principale' }, titolo), h('div', { class: 'secondaria' }, sotto)), h('span', { class: 'chevron' }, icona('chevron', false)));
-  return [h('div', { class: 'barra' }),
-    h('div', { class: 'titolo-grande' }, h('h1', {}, 'Giro'), h('p', {}, 'Come entri?')),
-    h('section', { class: 'gruppo' }, h('div', { class: 'lista' },
-      strada('Entra come gestore', 'Per l’ufficio: scrivi i turni dei tecnici e li pubblichi sul loro telefono', () => { location.href = 'gestore.html'; }),
-      strada('Entra come tecnico', 'Con email e password dell’ufficio: i turni arrivano da soli', () => vai('#/ufficio')),
-      strada('Carica il foglio dei turni', 'Senza account: apri il PDF che ti mandano, come sempre', async () => {
-        scriviLS(MODO, 'libero');
-        apriFile(); // subito, nel tocco: iPhone apre la scelta del file solo da un tocco
-        vai(!stato.giorno && (await leggiCopertine()).length !== 0 ? '#/casa' : '#/'); // stessa regola dell'avvio: la parete del poster shop è un oggetto, non un elenco
-      }))),
-    h('p', { class: 'piede' }, 'La scelta resta in questo telefono. Puoi collegarti all’ufficio anche dopo, da «L’ufficio».')];
+  return [h('div', { class: 'casa stanza-vuota' },
+    insegna('Giro', 'arcobaleno', 'spenta'),
+    h('div', { class: 'casa-muro' }, h('div', { class: 'muro-vuoto', 'aria-hidden': 'true' }, ...Array.from({ length: 6 }, () => h('span')))),
+    h('div', { class: 'casa-comandi' },
+      h('button', { type: 'button', class: 'casa-entra', onclick: () => vai('#/ufficio') }, 'Entra come tecnico'),
+      h('div', { class: 'casa-riga due' },
+        h('button', { type: 'button', class: 'casa-piccolo', onclick: () => { location.href = 'gestore.html'; } }, 'Entra come gestore'),
+        h('button', { type: 'button', class: 'casa-piccolo', onclick: async () => {
+          scriviLS(MODO, 'libero');
+          apriFile(); // subito, nel tocco: iPhone apre la scelta del file solo da un tocco
+          vai(!stato.giorno && (await leggiCopertine()).length !== 0 ? '#/casa' : '#/'); // stessa regola dell'avvio: la parete del poster shop è un oggetto, non un elenco
+        } }, 'Carica il foglio senza account'))),
+    ...cornice())];
 }
 
 function schermoUfficio() {
   const sceltoGia = uff.p || leggiLS(MODO); // chi non ha ancora scelto torna alle tre scelte
-  const barra = h('div', { class: 'barra' }, h('button', { type: 'button', class: 'indietro', 'aria-label': 'Indietro', onclick: () => vai(sceltoGia ? '#/' : '#/scelta') },
+  const barra = h('div', { class: 'barra' }, h('button', { type: 'button', class: 'indietro', 'aria-label': 'Indietro', onclick: () => vai(uff.p && !stato.giorno ? '#/casa' : sceltoGia ? '#/' : '#/scelta') },
     icona('indietro', false), h('span', { class: 'etichetta-indietro' }, !sceltoGia ? 'Scelte' : stato.giorno ? titoloGiorno() : 'Il tuo giro')));
   if (uff.gestore) {
     return [barra, h('div', { class: 'titolo-grande' }, h('h1', {}, 'L’ufficio'), h('p', {}, `Questo browser è collegato come ufficio (${uff.gestore.nome})`)),
@@ -904,6 +1010,8 @@ function schermoUfficio() {
           uff.p = p;
           scriviLS(MODO, 'tecnico');
           uff.rifare = false; uff.gestori = null;
+          uff.accendi = true; // tornando a casa l'insegna si accende col suo nome
+          sincronizzaStanza();
           stato.avviso = { testo: 'Collegato. I turni arrivano da soli; se attivi le notifiche ti avviso quando l’ufficio li pubblica.' };
           uff.canale ??= await ufficio.ascolta(`turni:${uff.p.id}`, 'turni', async r => riceviTurni(await ufficio.apriTurni(uff.p, [r])));
           disegna();
@@ -937,6 +1045,10 @@ function schermoUfficio() {
         try { await uff.canale?.unsubscribe(); } catch { /* senza rete: il canale si chiude da solo */ }
         await ufficio.esci(uff.p);
         localStorage.removeItem(MODO); // alla prossima apertura si torna alle tre scelte
+        // la sua insegna, la sua parete composta e il suo poster shop non restano a chi usa il telefono dopo (sul server c'è ancora tutto)
+        dimenticaStanza();
+        if (!Array.isArray(await leggiCopertineAdagio().catch(() => []))) await salvaCopertine([]).catch(() => {});
+        localStorage.removeItem(COLLEGAMENTO);
         Object.assign(uff, { p: null, canale: null, gestori: null, notifiche: null });
         stato.avviso = { testo: 'Uscito dall’ufficio. I giorni già arrivati restano in questo telefono.' };
         disegna();
@@ -964,10 +1076,12 @@ async function aggiornaDalNegozio() {
   if (!id || !navigator.onLine || Date.now() - pareteControllata < 30 * 60e3) return;
   pareteControllata = Date.now();
   const p = await scaricaParete(id);
-  if (p) await salvaCopertine(p).catch(() => {});
+  if (!p) return;
+  const prima = JSON.stringify(aCodice(await leggiCopertine()));
+  await salvaCopertine(p).then(() => { if (JSON.stringify(aCodice(p)) !== prima) pareteCambiata(); }, () => {}); // la stessa parete riscaricata non è una modifica
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { aggiornaDalNegozio(); aggiornaDallUfficio(); } });
-addEventListener('online', () => aggiornaDallUfficio());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { aggiornaDalNegozio(); aggiornaDallUfficio(); sincronizzaStanza(); } });
+addEventListener('online', () => { aggiornaDallUfficio(); sincronizzaStanza(); });
 
 pulisci();
 aggiornaDalNegozio();
@@ -979,7 +1093,7 @@ if (!location.hash && !location.search) {
   if (ufficio.ruoloCollegato() === 'gestore') { location.replace('gestore.html'); await new Promise(() => {}); } // la pagina sta cambiando: qui si ferma
   if (!ufficio.collegato() && !leggiLS(MODO)) history.replaceState(null, '', '#/scelta');
 }
-if (!stato.giorno && !location.hash && (await leggiCopertine()).length !== 0) history.replaceState(null, '', '#/casa');
+if (!stato.giorno && !location.hash && ((await leggiCopertine()).length !== 0 || ufficio.ruoloCollegato() === 'dipendente')) history.replaceState(null, '', '#/casa'); // il tecnico collegato entra dalla sua stanza
 disegna();
 const giornoChiesto = new URLSearchParams(location.search).get('giorno'); // da una notifica toccata ad app chiusa
 collegaUfficio().then(() => { if (giornoChiesto) { apriGiorno(giornoChiesto); history.replaceState(null, '', './'); } });

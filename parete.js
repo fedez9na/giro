@@ -19,6 +19,9 @@ export const leggiCopertine = () => Promise.race([
   new Promise(ok => setTimeout(() => ok([]), 800)), // se il telefono non risponde, il foglio si apre lo stesso senza parete
 ]).catch(() => []);
 export const salvaCopertine = parete => passo('readwrite', s => s.put(parete, 'copertine'));
+// senza la scadenza di 800 ms: chi decide se coprire la parete (la stanza dal server, l'uscita) deve sapere davvero cosa c'è;
+// se il telefono non risponde, rifiuta e non si tocca niente
+export const leggiCopertineAdagio = () => passo('readonly', s => s.get('copertine')).then(v => v ?? []);
 
 // Il codice di «Pubblica su Giro» del poster shop. Arriva dagli appunti, cioè da fuori: si accetta solo la forma attesa
 // (immagini di Comic Vine, posizioni intere piccole, un colore #rrggbb); ogni altra cosa si scarta.
@@ -41,7 +44,7 @@ export function leggiCodice(testo) {
 }
 
 // la stessa forma arriva dal codice incollato e dal poster shop: si controlla sempre qui
-function validaParete(j) {
+export function validaParete(j) {
   const intero = v => Number.isInteger(v) && Math.abs(v) <= 40;
   const tessere = (Array.isArray(j?.tessere) ? j.tessere : [])
     .filter(t => Array.isArray(t) && immagine(t[0]) && intero(t[1]) && intero(t[2])).slice(0, 60)
