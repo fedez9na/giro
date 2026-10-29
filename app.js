@@ -18,7 +18,6 @@ pdfjs.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs';
 // grammatica del telefono: Material su Android, iOS altrove; ?os=ios|android la forza (per le prove)
 document.documentElement.dataset.os = new URLSearchParams(location.search).get('os') ?? (/android/i.test(navigator.userAgent) ? 'android' : 'ios');
 const ANDROID = document.documentElement.dataset.os === 'android';
-const GIORNI_TENUTI = 7; // proposta: i dati di un giorno si cancellano da soli dopo 7 giorni
 const MOTIVI_KO = ['Cliente assente', 'Segnale insufficiente', 'Manca linea vita o accesso al tetto', 'Il cavo non passa', 'Il cliente rinuncia'];
 const MESSAGGI = {
   'senza-testo': 'Questo PDF non ha testo da leggere: forse è una foto o una scansione. Serve il PDF esportato da Excel.',
@@ -37,15 +36,28 @@ const isoDi = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 const aBase64 = b => { let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
 const daBase64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 
+// Restano oggi, ieri (dopo mezzanotte si recupera per un giorno: «Recupera ieri») e i giorni che verranno (turni caricati in
+// anticipo dall'ufficio); il resto si cancella da solo (Federico, 29/10). Mai un giorno con esiti non ancora arrivati all'ufficio:
+// mandaEsiti() li cerca qui. Si toglie invece quello di un'altra persona collegata prima su questo telefono.
+const ieriIso = () => { const d = new Date(); d.setDate(d.getDate() - 1); return isoDi(d); };
 function pulisci() {
-  const limite = isoDi(new Date(Date.now() - GIORNI_TENUTI * 864e5));
-  for (const g of giorniSalvati()) if (g < limite) localStorage.removeItem(CHIAVE + g);
+  const ieri = ieriIso(), io = ufficio.collegatoCome()?.id;
+  for (const iso of giorniSalvati()) {
+    if (iso >= ieri) continue;
+    const g = leggiLS(CHIAVE + iso);
+    if (g?.online && (!io || g.online.persona === io) && daMandare(g).length > 0) continue;
+    localStorage.removeItem(CHIAVE + iso);
+  }
+  // le carte scaricate (mappa:<giorno>) restano finché resta il loro giorno; quella della zona sempre
+  const restano = giorniSalvati();
+  globalThis.caches?.keys().then(k => k.filter(n => /^mappa:\d{4}-\d{2}-\d{2}$/.test(n) && !restano.includes(n.slice(6))).forEach(n => caches.delete(n))).catch(() => {});
 }
 
 const stato = { iso: null, giorno: null, avviso: null, annulla: null };
+// il giorno aperto da solo è solo oggi: ieri e i giorni che verranno si aprono dalla casa
 function scegliGiorno() {
-  const tutti = giorniSalvati(), oggi = isoDi(new Date());
-  return tutti.includes(oggi) ? oggi : tutti.find(g => g > oggi) ?? tutti.at(-1) ?? null;
+  const oggi = isoDi(new Date());
+  return giorniSalvati().includes(oggi) ? oggi : null;
 }
 function salva() {
   if (!scriviLS(CHIAVE + stato.iso, stato.giorno)) stato.avviso = { errore: true, testo: 'Il telefono non ha spazio per salvare: le modifiche si perderanno chiudendo l’app.' };
@@ -90,7 +102,8 @@ async function leggiEApri(bytes, ingresso) {
   stato.giorno = { giornata, pdf: aBase64(bytes), inviato: esistente?.inviato ?? null, meteo: esistente?.meteo ?? null, allerte: esistente?.allerte ?? null };
   stato.avviso = esistente ? avvisoCambi(giornata) : null;
   salva();
-  vai('#/');
+  scaricaMappa(stato.iso);
+  vai(!esistente && stato.iso === isoDi(new Date()) ? '#/casa' : '#/'); // il foglio di oggi: la casa con la mappa; i cambi e gli altri giorni nella lista
   const primo = ordinati(giornata).find(i => !i.esito.stato);
   ingresso?.prima(primo ? `Prima tappa: ${nomeComune(primo.comune)}!` : 'Giornata già fatta!', primo?.orario.da ? `alle ${hm(primo.orario.da)}` : '');
 }
@@ -364,7 +377,7 @@ function schermoGiornata() {
       h('p', { class: 'piede', 'data-esiti': '' }, online ? testoEsiti()
         : stato.giorno.inviato
         ? `Foglio preparato alle ${new Date(stato.giorno.inviato).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}. Nel foglio vanno solo esito, motivo KO ed euro extra.`
-        : `Nel foglio vanno solo esito, motivo KO ed euro extra. I dati restano in questo telefono e si cancellano dopo ${GIORNI_TENUTI} giorni.`),
+        : 'Nel foglio vanno solo esito, motivo KO ed euro extra. I dati restano in questo telefono: domani li recuperi ancora, poi si cancellano.'),
       h('p', { class: 'piede' }, 'Minuti sotto Naviga: dal centro del comune dove sei a quello del cliente, senza traffico. La posizione resta in questo telefono. Strade ',
         h('a', { href: 'https://www.openstreetmap.org/copyright', target: '_blank', rel: 'noopener' }, '© OpenStreetMap contributors'), ' (ODbL), calcolo OSRM.')),
     stato.annulla && h('div', { class: 'avviso-basso', role: 'status' },
@@ -412,6 +425,13 @@ document.addEventListener('visibilitychange', () => { riempiManca(); if (!docume
 // La posizione si chiede solo ad app aperta e non esce dal telefono: serve a trovare il comune dove sei. I minuti sono
 // nella tabella strade.json (nostra: OSRM su OpenStreetMap, da centro a centro del comune, senza traffico).
 let strade = null, dove = null, doveAlle = 0, ultimaPosizione = 0, chiesta = false;
+async function caricaStrade() {
+  if (strade) return strade;
+  const j = await (await fetch('strade.json')).json();
+  const testo = atob(j.minuti), minuti = new Uint8Array(testo.length);
+  for (let k = 0; k < testo.length; k++) minuti[k] = testo.charCodeAt(k); // un ciclo semplice: misurato in Node 2 ms contro 48 di Uint8Array.from con una funzione
+  return (strade = { comuni: j.comuni, minuti });
+}
 async function aggiornaGuida() {
   if (!document.querySelector('[data-guida-i]') || !navigator.geolocation) return riempiGuida();
   if (Date.now() - ultimaPosizione < 120000) return riempiGuida(); // al massimo ogni 2 minuti (batteria)
@@ -421,12 +441,7 @@ async function aggiornaGuida() {
     if (permesso === 'denied' || (permesso !== 'granted' && chiesta)) return riempiGuida(); // non la si richiede ogni 2 minuti
     chiesta = true;
     tabellaComuni ??= await (await fetch('comuni.json')).json();
-    if (!strade) {
-      const j = await (await fetch('strade.json')).json();
-      const testo = atob(j.minuti), minuti = new Uint8Array(testo.length);
-      for (let k = 0; k < testo.length; k++) minuti[k] = testo.charCodeAt(k); // un ciclo semplice: misurato in Node 2 ms contro 48 di Uint8Array.from con una funzione
-      strade = { comuni: j.comuni, minuti };
-    }
+    await caricaStrade();
     const p = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, { enableHighAccuracy: false, maximumAge: 120000, timeout: 20000 }));
     dove = comuneVicino(tabellaComuni, strade.comuni, p.coords.latitude, p.coords.longitude);
     doveAlle = Date.now();
@@ -695,28 +710,122 @@ function schermoScheda(i, focusTelefono) {
 // La parete arriva dopo (memoria del telefono): ha il suo posto, e i tasti stanno sotto, fuori dalla sua portata.
 let muroCasa = null;
 const INSEGNA = 70; // lo spazio dell'insegna sopra la parete
+// La stanza fotografata (casa3d/casa.js) dove il telefono la regge: WebGL2 (texture 3D e R8) su una scheda video vera
+// (failIfMajorPerformanceCaveat scarta il disegno in software) e almeno 2 GB, se il telefono lo dice. Sennò la parete DOM di sempre.
+let casa3d = null, turnoCasa = 0, regge3d;
+const reggeCasa3d = () => (regge3d ??= (() => {
+  try {
+    if (navigator.deviceMemory && navigator.deviceMemory < 2) return false;
+    const gl = document.createElement('canvas').getContext('webgl2', { failIfMajorPerformanceCaveat: true });
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    return !!gl;
+  } catch { return false; }
+})());
+const chiudiCasa3d = () => { turnoCasa++; casa3d?.api.chiudi(); casa3d = null; };
+const nomeBreve = iso => (iso === (d => (d.setDate(d.getDate() + 1), isoDi(d)))(new Date()) ? 'Domani'
+  : new Date(`${iso}T12:00`).toLocaleDateString('it-IT', { weekday: 'long' }).replace(/^./, c => c.toUpperCase()));
 function schermoCasa() {
   const posto = h('div', { class: 'casa-muro' });
-  costruisciMuro(innerWidth - 44, innerHeight - (stato.giorno ? 230 : 284) - INSEGNA).then(m => { // senza foglio c'è una riga in più sotto
-    if (location.hash !== '#/casa') return liberaMuro(m);
+  const muroDom = () => costruisciMuro(innerWidth - 44, innerHeight - (stato.giorno ? 230 : 284) - INSEGNA).then(m => { // senza foglio c'è una riga in più sotto
+    if (location.hash !== '#/casa' || !posto.isConnected) return liberaMuro(m);
     muroCasa = m;
     if (m?.colore) posto.closest('.casa').style.background = m.colore;
     posto.replaceChildren(m ? m.muro : h('p', { class: 'casa-vuota' }, 'La tua parete è vuota: componila sul poster shop o scegli le copertine dalle foto'));
   });
   const shop = h('a', { class: 'casa-piccolo', href: 'https://immersive-poster-shop.vercel.app/parete', target: '_blank', rel: 'noopener' }, 'Componi la parete');
-  const tecnico = ufficio.ruoloCollegato() === 'dipendente'; // i turni gli arrivano dall'ufficio: niente PDF da aprire
+  const tecnico = ufficio.ruoloCollegato() === 'dipendente';
   const s = miaStanza(), testo = scrittaDi(s, ufficio.collegatoCome()?.nome);
   const scritta = insegna(testo, s?.colore ?? 'arcobaleno', uff.accendi ? 'accende' : '', { onclick: apriStanza, 'aria-label': `${testo}: cambia la scritta e il colore delle luci` });
   uff.accendi = false;
-  return [h('div', { class: 'casa' }, scritta, posto,
-    h('div', { class: 'casa-comandi' },
-      h('button', { type: 'button', class: 'casa-entra', onclick: () => (stato.giorno ? vai('#/') : tecnico ? vai('#/ufficio') : apriFile()) },
-        stato.giorno ? `Il giro di ${titoloGiorno().toLowerCase()}` : tecnico ? 'Aspetto i turni dall’ufficio' : 'Apri il foglio dei turni'),
-      h('div', { class: 'casa-riga' }, shop,
-        h('button', { type: 'button', class: 'casa-piccolo', onclick: incollaParete }, leggiLS(COLLEGAMENTO) ? 'Incolla un codice' : 'Collega lo shop'),
-        h('button', { type: 'button', class: 'casa-piccolo', onclick: scegliCopertine }, 'Dalle foto')),
-      !stato.giorno && h('button', { type: 'button', class: 'casa-aiuto', onclick: () => vai('#/') }, 'Come si apre il foglio')),
-    ...cornice())];
+  // il giro della casa è solo quello di oggi; senza, «Aggiungi ora» apre il foglio. Sotto, piccoli, ieri e i giorni che verranno
+  const oggi = isoDi(new Date()), diOggi = !!stato.giorno && stato.iso === oggi, giorni = giorniSalvati();
+  const altri = [giorni.includes(ieriIso()) && h('button', { type: 'button', class: 'casa-piccolo', onclick: () => apriGiorno(ieriIso()) }, 'Recupera ieri'),
+    ...giorni.filter(g => g > oggi).slice(0, 2).map(g => h('button', { type: 'button', class: 'casa-piccolo', onclick: () => apriGiorno(g) }, nomeBreve(g)))].filter(Boolean);
+  const tre = reggeCasa3d();
+  const comandi = h('div', { class: 'casa-comandi' },
+    h('button', { type: 'button', class: 'casa-entra', onclick: async () => {
+      if (!diOggi) return apriFile();
+      await casa3d?.api.chinati(); // si china sul tavolo, poi la lista
+      vai('#/');
+    } }, diOggi ? `Il giro di ${titoloGiorno().toLowerCase()}` : 'Aggiungi ora'),
+    altri.length ? h('div', { class: `casa-riga ${['', 'una', 'due', ''][altri.length]}` }, altri) : null,
+    h('div', { class: 'casa-riga' }, shop,
+      h('button', { type: 'button', class: 'casa-piccolo', onclick: incollaParete }, leggiLS(COLLEGAMENTO) ? 'Incolla un codice' : 'Collega lo shop'),
+      h('button', { type: 'button', class: 'casa-piccolo', onclick: scegliCopertine }, 'Dalle foto')),
+    !diOggi && (tecnico ? h('button', { type: 'button', class: 'casa-aiuto', onclick: () => vai('#/ufficio') }, 'I turni dall’ufficio arrivano da soli')
+      : h('button', { type: 'button', class: 'casa-aiuto', onclick: () => vai('#/') }, 'Come si apre il foglio')),
+    tre && h('div', { class: 'casa-fonte' }, 'Carta', // la carta sul tavolo: strade di OpenFreeMap (schema OpenMapTiles, dati OpenStreetMap, ODbL)
+      h('a', { href: 'https://www.openmaptiles.org/', target: '_blank', rel: 'noopener' }, '© OpenMapTiles'),
+      h('a', { href: 'https://www.openstreetmap.org/copyright', target: '_blank', rel: 'noopener' }, '© OpenStreetMap contributors')));
+  const casa = h('div', { class: tre ? 'casa tre-d' : 'casa' }, scritta, posto, comandi, ...cornice());
+  if (!tre) { muroDom(); return [casa]; }
+  // la stanza di prima resta sotto finché la nuova non è pronta; con gli stessi dati si riaggancia e basta
+  if (casa3d) { casa.classList.add('pronta'); requestAnimationFrame(() => casa3d?.api.lega({ contenitore: casa, insegnaEl: scritta, comandi })); }
+  apriCasa3d(casa, scritta, comandi, muroDom);
+  return [casa];
+}
+
+async function apriCasa3d(casa, scritta, comandi, ripiego) {
+  const turno = ++turnoCasa, valido = () => turno === turnoCasa && location.hash === '#/casa';
+  try {
+    const c = miaStanza()?.colore ?? 'arcobaleno';
+    const [parete, giro] = await Promise.all([leggiCopertine(), giroPerCasa()]);
+    if (!valido()) return;
+    const op = { contenitore: casa, insegnaEl: scritta, comandi, parete, colore: COLORI[c] ?? null, insegna: COLORI[c] ?? 'arcobaleno', giro, giorno: giro ? stato.iso : null };
+    const chiaveCasa = JSON.stringify([Array.isArray(parete) ? parete.map(b => `${b.size}:${b.type}`) : parete, op.colore, op.insegna, giro]);
+    if (casa3d?.chiave === chiaveCasa) return; // la stessa stanza: già riagganciata
+    const { apriCasa } = await import('./casa3d/casa.js');
+    const api = await apriCasa(op);
+    if (!valido()) return api.chiudi();
+    casa3d?.api.chiudi();
+    casa3d = { api, chiave: chiaveCasa };
+    casa.classList.add('pronta');
+  } catch (e) {
+    console.warn('casa 3d', e);
+    if (!valido()) return;
+    casa3d?.api.chiudi(); casa3d = null;
+    casa.classList.remove('tre-d', 'pronta');
+    ripiego();
+  }
+}
+
+// Il giro di oggi per la mappa della casa: tappe (interventi di fila nello stesso comune) nell'ordine del foglio, la prossima, i tratti
+// fatti, quello da guidare, lo stretto di «Prima di partire» (puntoStretto, non ricalcolato) e i minuti di strade.json come sotto Naviga
+const caricaComuni = async () => (tabellaComuni ??= await (await fetch('comuni.json')).json());
+// le tappe: interventi di fila nello stesso comune, col centro del comune (comuni.json)
+function tappeDi(giro, centri) {
+  const tappe = [];
+  for (const i of giro) {
+    const k = chiave(i.comune), ultima = tappe.at(-1);
+    if (ultima?.chiave === k) ultima.interventi.push(i); else tappe.push({ chiave: k, nome: nomeComune(i.comune), centro: centri[k] ?? null, interventi: [i] });
+  }
+  return tappe;
+}
+// Arrivato un foglio (con la rete): la carta di quel giorno si scarica subito nel telefono (tile di OpenFreeMap del riquadro e
+// percorsi fra le tappe di fila), così la casa si apre anche senza rete per tutta la giornata. Solo dove la casa 3D si vede.
+async function scaricaMappa(iso) {
+  const g = iso === stato.iso ? stato.giorno : leggiLS(CHIAVE + iso);
+  if (!g || !reggeCasa3d() || !navigator.onLine) return;
+  try {
+    const tappe = tappeDi(ordinati(g.giornata), await caricaComuni()).map(({ chiave: k, centro }) => ({ chiave: k, centro }));
+    if (tappe.length) await (await import('./casa3d/mappa.js')).prepara(iso, tappe);
+  } catch (e) { console.warn('mappa', e); }
+}
+
+async function giroPerCasa() {
+  if (!stato.giorno || stato.iso !== isoDi(new Date())) return null;
+  const giro = ordinati(stato.giorno.giornata);
+  if (!giro.length) return null;
+  const [centri, tab] = await Promise.all([caricaComuni().catch(() => ({})), caricaStrade().catch(() => null)]);
+  const prossimo = giro.find(i => !i.esito.stato), p = puntoStretto(giro), stretto = p && p.minuti <= 60 ? p : null;
+  const tappe = tappeDi(giro, centri);
+  const statoDi = t => (t.interventi.every(i => i.esito.stato) ? 'fatto' : t.interventi.includes(prossimo) ? 'prossimo' : 'poi');
+  return {
+    tappe: tappe.map(t => ({ chiave: t.chiave, nome: t.nome, centro: t.centro, stato: statoDi(t), ora: t.interventi.includes(prossimo) ? hm(prossimo.orario.da) : '' })),
+    tratti: tappe.slice(1).map((t, k) => ({ tipo: { fatto: 'fatto', prossimo: 'prossimo', poi: 'normale' }[statoDi(t)],
+      stretta: !!stretto && tappe[k].interventi.includes(stretto.da) && t.interventi.includes(stretto.a),
+      minuti: tab ? minutiGuida(tab, tappe[k].chiave, t.chiave) : null })),
+  };
 }
 
 // ---------- la sua stanza: la scritta sull'insegna e il colore delle luci (Federico, 28/10) ----------
@@ -813,6 +922,7 @@ function disegna() {
   const app = document.getElementById('app');
   luci(miaStanza()?.colore); // le luci di chi è collegato adesso (o di nessuno): mai quelle di chi è uscito
   liberaMuro(muroCasa); muroCasa = null;
+  if (location.hash !== '#/casa') chiudiCasa3d(); // uscendo dalla casa non resta nessun contesto WebGL
   const m = location.hash.match(/^#\/i\/(\d+)(\?telefono)?/);
   const i = m && stato.giorno?.giornata.interventi[+m[1]];
   const prova = location.hash === '#/prova' && stato.giorno && !stato.giorno.online; // un giorno dall'ufficio non ha il PDF
@@ -918,16 +1028,20 @@ async function unisciTurni(aperti) {
     arrivati.push({ iso, nuovo: !giorno, cambi: giorno ? giornata.cambi : [] });
   }
   if (!arrivati.length) return;
+  for (const a of arrivati) scaricaMappa(a.iso);
   // si cambia giorno da soli solo se non ce n'è uno aperto: sennò si resta dove si è (anche su ieri) e l'avviso dice «Apri …»
   const vuoto = !stato.giorno;
   if (vuoto) { stato.iso = scegliGiorno(); stato.giorno = stato.iso ? leggiLS(CHIAVE + stato.iso) : null; }
+  // sulla casa i turni di oggi arrivati diventano il giro (anche se era aperto ieri, recuperato), e la casa si ridisegna con la mappa
+  const casa = location.hash === '#/casa', oggi = isoDi(new Date());
+  if (casa && stato.iso !== oggi && arrivati.some(a => a.iso === oggi)) { stato.iso = oggi; stato.giorno = leggiLS(CHIAVE + oggi); }
   const qui = arrivati.find(a => a.iso === stato.iso), altrove = arrivati.find(a => a.iso !== stato.iso);
   stato.avviso = qui && !qui.nuovo ? { ...avvisoCambi(stato.giorno.giornata), testo: 'L’ufficio ha aggiornato i turni. Gli esiti che avevi segnato restano.' }
     : qui ? { testo: `Turni di ${nomeGiorno(qui.iso)} arrivati dall’ufficio.` }
     : { testo: `${altrove.nuovo ? 'Sono arrivati' : 'L’ufficio ha aggiornato'} i turni di ${nomeGiorno(altrove.iso)}.`, apri: altrove.iso };
   if (!qui?.cambi.length) delete stato.avviso.lista;
   // i dati arrivano mentre tocca: niente ridisegno sotto il dito (G14). Una barra in basso, fuori dai tasti, e si mostra al tocco
-  if (vuoto || location.hash === '#/ufficio') return disegna();
+  if (vuoto || casa || location.hash === '#/ufficio') return disegna(); // la casa non ha tasti sotto il dito che si spostano
   document.querySelector('.avviso-arrivo')?.remove();
   document.querySelector('.schermo')?.append(h('div', { class: 'avviso-basso avviso-arrivo', role: 'status' },
     h('span', {}, qui && !qui.nuovo ? 'L’ufficio ha aggiornato i turni' : `Turni dall’ufficio: ${nomeGiorno((qui ?? altrove).iso)}`),
@@ -980,7 +1094,7 @@ function schermoScelta() {
         h('button', { type: 'button', class: 'casa-piccolo', onclick: async () => {
           scriviLS(MODO, 'libero');
           apriFile(); // subito, nel tocco: iPhone apre la scelta del file solo da un tocco
-          vai(!stato.giorno && (await leggiCopertine()).length !== 0 ? '#/casa' : '#/'); // stessa regola dell'avvio: la parete del poster shop è un oggetto, non un elenco
+          vai('#/casa'); // dopo la scelta si entra sempre dalla casa (Federico, 29/10)
         } }, 'Carica il foglio senza account'))),
     ...cornice())];
 }
@@ -1014,7 +1128,7 @@ function schermoUfficio() {
           sincronizzaStanza();
           stato.avviso = { testo: 'Collegato. I turni arrivano da soli; se attivi le notifiche ti avviso quando l’ufficio li pubblica.' };
           uff.canale ??= await ufficio.ascolta(`turni:${uff.p.id}`, 'turni', async r => riceviTurni(await ufficio.apriTurni(uff.p, [r])));
-          disegna();
+          vai('#/casa'); // entrato: la sua casa, non la pagina dell'ufficio (Federico, 29/10)
           aggiornaDallUfficio();
         } catch (x) { errore.textContent = x.message; entra.disabled = false; entra.textContent = 'Collegati'; }
       } },
@@ -1129,20 +1243,30 @@ async function aggiornaDalNegozio() {
   const prima = JSON.stringify(aCodice(await leggiCopertine()));
   await salvaCopertine(p).then(() => { if (JSON.stringify(aCodice(p)) !== prima) pareteCambiata(); }, () => {}); // la stessa parete riscaricata non è una modifica
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { aggiornaDalNegozio(); aggiornaDallUfficio(); sincronizzaStanza(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { aggiornaDalNegozio(); aggiornaDallUfficio(); sincronizzaStanza(); nuovoGiorno(); } });
+// l'app rimasta aperta oltre mezzanotte: sulla casa il giro di ieri non è più quello corrente (resta da recuperare)
+let giornoVisto = isoDi(new Date());
+function nuovoGiorno() {
+  const oggi = isoDi(new Date());
+  if (oggi === giornoVisto) return;
+  giornoVisto = oggi;
+  pulisci();
+  if (location.hash !== '#/casa') return;
+  stato.iso = scegliGiorno(); stato.giorno = stato.iso ? leggiLS(CHIAVE + stato.iso) : null;
+  disegna();
+}
 addEventListener('online', () => { aggiornaDallUfficio(); sincronizzaStanza(); });
 
 pulisci();
 aggiornaDalNegozio();
 stato.iso = scegliGiorno();
 stato.giorno = stato.iso ? leggiLS(CHIAVE + stato.iso) : null;
-// senza foglio si entra dalla sua parete, se ne ha una; le istruzioni restano a un tocco («Come si apre il foglio»)
-// all'apertura: il browser dell'ufficio va alla sua pagina; chi non ha ancora scelto una strada vede le tre scelte
+// all'apertura: il browser dell'ufficio va alla sua pagina; chi non ha ancora scelto una strada vede le tre scelte; tutti gli
+// altri entrano sempre dalla casa, anche col foglio di oggi (Federico, 29/10). Le istruzioni restano a un tocco («Come si apre il foglio»)
 if (!location.hash && !location.search) {
   if (ufficio.ruoloCollegato() === 'gestore') { location.replace('gestore.html'); await new Promise(() => {}); } // la pagina sta cambiando: qui si ferma
-  if (!ufficio.collegato() && !leggiLS(MODO)) history.replaceState(null, '', '#/scelta');
+  history.replaceState(null, '', !ufficio.collegato() && !leggiLS(MODO) ? '#/scelta' : '#/casa');
 }
-if (!stato.giorno && !location.hash && ((await leggiCopertine()).length !== 0 || ufficio.ruoloCollegato() === 'dipendente')) history.replaceState(null, '', '#/casa'); // il tecnico collegato entra dalla sua stanza
 disegna();
 const giornoChiesto = new URLSearchParams(location.search).get('giorno'); // da una notifica toccata ad app chiusa
 collegaUfficio().then(() => { if (giornoChiesto) { apriGiorno(giornoChiesto); history.replaceState(null, '', './'); } });

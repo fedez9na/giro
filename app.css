@@ -240,6 +240,33 @@ body:has(.avviso-basso) { padding-bottom: calc(84px + env(safe-area-inset-bottom
 .casa-riga { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .casa-piccolo { min-height: 44px; display: grid; place-items: center; text-align: center; border: 0; border-radius: 12px; background: rgba(255, 255, 255, .14); color: #fff; font-size: .8125rem; font-weight: 600; text-decoration: none; padding: 4px; }
 @media (prefers-reduced-motion: reduce) { .cornice-led { animation: none; } }
+.casa-riga.una { grid-template-columns: 1fr; }
+
+/* ---------- la stanza fotografata (casa3d/casa.js): la tela in uno strato fisso sotto la casa, che in 3D diventa trasparente ---------- */
+.casa-strato { position: fixed; inset: 0; z-index: 39; pointer-events: none; overflow: hidden; background: #0b0c10; opacity: 0; transition: opacity .3s; }
+.casa-strato.pronto { opacity: 1; }
+.casa-strato canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.casa.tre-d { background: #0b0c10; padding-top: env(safe-area-inset-top, 0px); }
+.casa.tre-d.pronta { background: transparent; }
+.casa.tre-d:not(.pronta) .insegna { opacity: 0; }
+.casa.tre-d .insegna { overflow: visible; } /* l'alone del neon non si taglia sul bordo della scritta (il critico, 29/10) */
+.casa.tre-d .casa-muro { padding: 0; }
+.casa.tre-d .casa-comandi { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px); }
+.casa-fonte { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: -10px; font-size: 10.5px; color: rgba(255, 255, 255, .55); }
+.casa-fonte a { min-height: 44px; display: flex; align-items: center; color: inherit; text-decoration: none; }
+.casa.tre-d .casa-piccolo { background: rgba(255, 255, 255, .16); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+/* telefono girato e schermi larghi: i tasti in colonna a destra, la stanza intera nel resto */
+@media (orientation: landscape) {
+  .casa.tre-d .casa-comandi { position: absolute; top: 0; right: 0; bottom: 0; width: min(360px, 44vw); align-content: center;
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) calc(env(safe-area-inset-right, 0px) + 20px) calc(env(safe-area-inset-bottom, 0px) + 12px) 12px; }
+}
+.casa-cartellino, .casa-tratto { position: absolute; left: 0; top: 0; white-space: nowrap; transition: opacity .2s; font-variant-numeric: tabular-nums; }
+.casa-cartellino { background: #22378a; color: #fff; border-radius: 7px; padding: 5px 10px 6px; font: 600 14px/1.15 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .3), 0 4px 12px rgba(0, 0, 0, .35); }
+.casa-cartellino small { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, .85); }
+.casa-cartellino .quale { display: block; font-size: 11px; letter-spacing: .02em; }
+.casa-tratto { padding: 3px 8px 4px; border-radius: 999px; background: #2c47c4; color: #fff; font: 600 12.5px/1.1 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  box-shadow: 0 0 0 1.5px #fff, 0 2px 6px rgba(20, 30, 80, .3); }
 
 /* ---------- la sua insegna al neon sopra i poster; la stanza vuota della prima apertura ---------- */
 .insegna { display: block; width: calc(100% - 44px); margin: calc(env(safe-area-inset-top, 0px) + 14px) 22px 0; padding: 6px 0 8px; border: 0; background: none;

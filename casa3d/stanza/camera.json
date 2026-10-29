@@ -1,0 +1,84 @@
+{
+ "lastra": [
+  720,
+  1656
+ ],
+ "metri_per_unita": 0.55,
+ "camera": {
+  "occhio": [
+   0.0,
+   2.00719,
+   3.29815
+  ],
+  "guarda": [
+   0.0,
+   0.014,
+   -0.6017
+  ],
+  "fov_v": 45.0,
+  "spostamento": [
+   0,
+   0
+  ],
+  "esposizione_stop": -1.45,
+  "fuoco_m": 1.921,
+  "diaframma": 4.227,
+  "lente_mm": 28.971,
+  "sensore_v_mm": 24.0
+ },
+ "coc_px": {
+  "muro": 1.3,
+  "insegna": 1.01,
+  "cartone_davanti": 0.76,
+  "cartone_dietro": 0.88
+ },
+ "muro": {
+  "z": -0.73607,
+  "colore": "#26335f",
+  "poster": {
+   "y0": 0.99459,
+   "y1": 0.21283,
+   "w": 1.3804,
+   "x0": -0.6902
+  },
+  "insegna": {
+   "y0": 1.62175,
+   "y1": 1.37373,
+   "w": 1.2889,
+   "x0": -0.64445
+  },
+  "striscia": {
+   "x0": -0.58125,
+   "x1": 0.58125,
+   "y": 1.13805,
+   "z": -0.72607
+  }
+ },
+ "piastra": {
+  "z": 0.35,
+  "lato": 1.0,
+  "piano": 0.014
+ },
+ "gruppi": [
+  "base",
+  "led0",
+  "led1",
+  "led2",
+  "striscia",
+  "insegna"
+ ],
+ "area_sicura_ws": {
+  "fondo_mappa": 1.75,
+  "retro_cartone": 1.29,
+  "muro_tavolo": 1.12,
+  "poster": [
+   0.51,
+   1.0
+  ],
+  "striscia": 0.4,
+  "insegna": [
+   0.05,
+   0.24
+  ]
+ }
+}

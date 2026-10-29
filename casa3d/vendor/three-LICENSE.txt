@@ -1,0 +1,2 @@
+three.js r185 (copia locale da Desktop/ttf-bento/aspetti/vendor, intestazione dei file: "Copyright 2010-2026 Three.js Authors, SPDX-License-Identifier: MIT").
+Licenza MIT: https://github.com/mrdoob/three.js/blob/dev/LICENSE
