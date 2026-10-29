@@ -1041,6 +1041,7 @@ function schermoUfficio() {
       h('div', { class: 'riga' }, h('span', { class: 'corpo' }, h('div', { class: 'secondaria' }, testoNotifiche)))),
     h('p', { class: 'piede' }, `${uff.p.email}. Turni e esiti viaggiano cifrati: il server non legge clienti, indirizzi, telefoni e note.`)),
     h('section', { class: 'gruppo' }, h('div', { class: 'lista' },
+      h('button', { type: 'button', class: 'riga azione-riga', onclick: apriMioAccesso }, 'Cambia la password'),
       h('button', { type: 'button', class: 'riga azione-riga rosso', onclick: async () => {
         try { await uff.canale?.unsubscribe(); } catch { /* senza rete: il canale si chiude da solo */ }
         await ufficio.esci(uff.p);
@@ -1053,6 +1054,54 @@ function schermoUfficio() {
         stato.avviso = { testo: 'Uscito dall’ufficio. I giorni già arrivati restano in questo telefono.' };
         disegna();
       } }, 'Esci dall’ufficio')))];
+}
+
+// La password gliel'ha data l'ufficio: qui la cambia e da lì in poi la sa solo lui. La chiave resta la stessa, riavvolta con
+// la nuova (ufficio.js): turni, esiti e stanza restano leggibili. Gli altri suoi telefoni escono quando scade il loro accesso
+// (fino a un'ora: Supabase non ferma prima un accesso già dato) o alla riapertura, e si ricollegano con la nuova.
+// La coppia di chiavi però è nata nel browser dell'ufficio: la password nuova chiude l'account, non cambia la chiave.
+function apriMioAccesso() {
+  const campo = (etichetta, autocomplete) => h('label', { class: 'stanza-campo' }, h('span', {}, etichetta), h('input', { type: 'password', required: true, autocomplete }));
+  const errore = h('p', { class: 'stanza-nota errore-testo', role: 'alert' });
+  const cambia = h('button', { type: 'submit', class: 'pieno' }, 'Cambia');
+  const annulla = h('button', { type: 'button', onclick: () => d.close() }, 'Annulla');
+  const occupato = si => { cambia.disabled = annulla.disabled = si; cambia.textContent = si ? 'Cambio…' : 'Cambia'; };
+  const d = h('dialog', { class: 'stanza-dialogo', 'aria-labelledby': 'accesso-titolo', oncancel: e => { if (cambia.disabled) e.preventDefault(); } }, // partito il cambio, Esc non lo annulla: non si può fermare a metà
+    h('form', { onsubmit: async e => {
+      e.preventDefault();
+      const [vecchia, nuova, ripeti] = [...e.currentTarget.querySelectorAll('input[type=password]')].map(i => i.value);
+      errore.textContent = '';
+      if (nuova.length < 10) { errore.textContent = 'La password nuova deve avere almeno 10 caratteri.'; return; }
+      if (nuova !== ripeti) { errore.textContent = 'Le due password nuove non sono uguali.'; return; }
+      if (nuova === vecchia) { errore.textContent = 'La password nuova è uguale a quella di adesso.'; return; }
+      occupato(true);
+      try {
+        uff.p = await ufficio.cambiaMioAccesso(uff.p, vecchia, uff.p.email, nuova);
+        d.close();
+        stato.avviso = { testo: 'Password cambiata: adesso la sai solo tu. Sugli altri telefoni ricollegati con quella nuova.' };
+        disegna();
+      } catch (x) {
+        if (!x.giaAttiva) { errore.textContent = x.message; occupato(false); return; }
+        // sul server vale già la nuova, la sessione di qui no: si esce (i suoi giorni e la sua stanza restano) e rientra con quella
+        d.close();
+        try { await uff.canale?.unsubscribe(); } catch { /* senza rete il canale si chiude da solo */ }
+        await ufficio.esci(uff.p).catch(() => {});
+        Object.assign(uff, { p: null, canale: null, gestori: null, notifiche: null, rifare: true });
+        stato.avviso = { errore: true, testo: x.message };
+        disegna();
+      }
+    } },
+      h('h2', { id: 'accesso-titolo' }, 'Il mio accesso'),
+      h('input', { type: 'email', autocomplete: 'username', value: uff.p.email, readonly: true, hidden: true }), // per chi salva le password nel telefono
+      campo('Password di adesso', 'current-password'),
+      campo('Password nuova', 'new-password'),
+      campo('Ripeti la password nuova', 'new-password'),
+      errore,
+      h('p', { class: 'stanza-nota' }, 'Almeno 10 caratteri. Turni, esiti e la tua stanza restano come sono.'),
+      h('div', { class: 'stanza-tasti' }, annulla, cambia)));
+  d.addEventListener('close', () => d.remove());
+  document.body.append(d);
+  d.showModal();
 }
 
 // la notifica toccata: si apre il giorno dei turni (il service worker lo manda qui, o nell'indirizzo se l'app era chiusa)

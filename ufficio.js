@@ -131,7 +131,10 @@ export async function cambiaMioAccesso(p, vecchiaPassword, email, password) {
   let privata;
   try { privata = await riavvolgi(c.privata, vecchia.apri, nuova.apri); } catch { throw new Error('La password attuale non è giusta'); }
   await chiama('mio-accesso', { vecchio: vecchia.accesso, email: e, accesso: nuova.accesso, privata });
-  return entra(e, password);
+  // da qui sul server vale già la nuova: se il rientro non riesce, «riprova» con la vecchia non funzionerebbe più
+  try { return await entra(e, password); } catch {
+    throw Object.assign(new Error('La password nuova è già attiva, ma non riesco a ricollegarti: rientra con quella nuova.'), { giaAttiva: true });
+  }
 }
 
 // ---------- il dipendente: turni in arrivo, esiti in partenza, notifiche ----------
@@ -179,7 +182,7 @@ export async function mandaEsito(p, iso, riga, esito, destinatari) {
 }
 
 // La sua stanza (scritta, colore, parete composta, collegamento al poster shop), chiusa con la sua chiave: dall'app i gestori non la leggono (chi conosce
-// la sua password sì: oggi la sceglie il gestore). La busta non è firmata: che la scriva solo lui lo garantisce la regola sul server.
+// la sua password sì: la prima la sceglie il gestore, poi lui la cambia in «Cambia la password»). La busta non è firmata: che la scriva solo lui lo garantisce la regola sul server.
 // null se non c'è o se è chiusa con una chiave vecchia (password cambiata): allora vale quella del telefono.
 export async function miaStanza(p) {
   const sb = await server();

@@ -272,6 +272,8 @@ button.insegna:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .stanza-vista { margin: 6px 0 12px; border-radius: 14px; background: radial-gradient(120% 90% at 50% 0%, #22378a, #0c1640); overflow: hidden; }
 .stanza-vista .insegna { width: calc(100% - 24px); margin: 10px 12px; }
 .stanza-campo { display: grid; gap: 6px; font-size: .875rem; color: rgba(255, 255, 255, .75); }
+.stanza-campo:first-of-type, .stanza-campo + .stanza-campo { margin-top: 12px; }
+.stanza-dialogo .errore-testo { color: #ff6961; } /* il foglio è sempre scuro: il rosso del tema chiaro qui fa 3,4:1, questo 6,6:1 */
 .stanza-campo input { font: inherit; font-size: 1.0625rem; color: #fff; background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .2); border-radius: 12px; min-height: 48px; padding: 0 14px; }
 .stanza-colori { border: 0; padding: 0; margin: 14px 0 0; display: flex; flex-wrap: wrap; gap: 10px; }
 .stanza-colori legend { font-size: .875rem; color: rgba(255, 255, 255, .75); margin-bottom: 8px; padding: 0; }
