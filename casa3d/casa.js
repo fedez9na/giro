@@ -259,7 +259,8 @@ export async function apriCasa(op) {
       const dato = giro.tratti[giro.tappe.indexOf(tappe[i].da)] ?? {}; // il tratto che parte da questa tappa
       const p = datiPercorsi[i];
       const punti = p ? p.coords.map(([lon, lat]) => zona(lat, lon)) : [tappe[i].xy, tappe[i + 1].xy];
-      tracciati.push({ punti, metri: p?.metri ?? null, dritta: !p, tipo: dato.tipo ?? 'normale', stretta: !!dato.stretta, minuti: dato.minuti ?? null });
+      tracciati.push({ punti, metri: p?.metri ?? null, dritta: !p, tipo: dato.tipo ?? 'normale', stretta: !!dato.stretta,
+        minuti: Number.isFinite(p?.secondi) ? Math.round(p.secondi / 60) : dato.minuti ?? null }); // i minuti della strada disegnata (OpenRouteService)
     }
 
     // la stampa: aree abitate, acqua, strade fino alle terziarie (schema OpenMapTiles), le strade del giro; i nomi a parte (nostri)

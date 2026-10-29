@@ -64,7 +64,12 @@ export function comuneVicino(tabella, chiavi, lat, lon, maxKm = 8) {
   return km <= maxKm ? meglio : null;
 }
 
-export function minutiGuida(strade, da, a) {
+// `ors`: i minuti di OpenRouteService già presi («A|B» → minuti), più vicini al vero della tabella (Federico, 29/10:
+// Pogliano→Busto ORS 33, tabella 23, Google col traffico 37); dove mancano, la tabella.
+export function minutiGuida(strade, da, a, ors = {}) {
+  if (da === a) return 0;
+  if (Number.isFinite(ors[`${da}|${a}`])) return ors[`${da}|${a}`];
+  if (!strade) return null;
   const i = strade.comuni.indexOf(da), j = strade.comuni.indexOf(a);
   const m = i < 0 || j < 0 ? 255 : strade.minuti[i * strade.comuni.length + j];
   return m === 255 ? null : m;

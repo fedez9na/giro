@@ -1,5 +1,5 @@
 // Senza rete: i file dell'app stanno in cache e si servono da lì. Il PDF condiviso (Android) arriva qui come POST.
-const VERSIONE = 'giro-11';
+const VERSIONE = 'giro-12';
 const FILE = ['./', 'index.html', 'app.css', 'app.js', 'lettore.js', 'giornata.js', 'compila.js', 'link.js', 'margini.js', 'calendario.js', 'testi.js', 'meteo.js', 'parete.js', 'turni.js', 'cifra.js', 'ufficio.js', 'stanza.js', 'vendor/supabase.js', 'comuni.json', 'strade.json', 'vendor/Bangers-Regular.ttf',
   'manifest.webmanifest', 'icona.svg', 'icona-192.png', 'icona-512.png',
   'vendor/pdf.min.mjs', 'vendor/pdf.worker.min.mjs', 'vendor/pdf-lib.esm.min.js',
@@ -19,8 +19,14 @@ self.addEventListener('install', e => e.waitUntil(caches.open(VERSIONE)
     if (!r.ok) throw new Error(`${f}: ${r.status}`); // come addAll: o tutti o nessuno, si riprova alla prossima apertura
     return c.put(f, r);
   }))).then(() => self.skipWaiting())));
-self.addEventListener('activate', e => e.waitUntil(
-  caches.keys().then(k => Promise.all(k.filter(n => n !== VERSIONE && n !== 'condivisi' && n !== 'parete' && !n.startsWith('mappa:')).map(n => caches.delete(n)))).then(() => self.clients.claim())));
+// Una versione nuova ricarica subito le pagine aperte (Federico, 29/10: alla prima apertura dopo un rilascio vedeva ancora la
+// versione vecchia, «dove sono tutte le modifiche?»). Solo se prima c'era un'altra versione: alla primissima installazione no.
+self.addEventListener('activate', e => e.waitUntil(caches.keys().then(async k => {
+  const vecchie = k.filter(n => n !== VERSIONE && n !== 'condivisi' && n !== 'parete' && !n.startsWith('mappa:'));
+  await Promise.all(vecchie.map(n => caches.delete(n)));
+  await self.clients.claim();
+  if (vecchie.some(n => n.startsWith('giro-'))) for (const c of await self.clients.matchAll({ type: 'window' })) c.navigate(c.url).catch(() => {});
+})));
 
 // La notifica dell'ufficio: il testo lo scrive il server dalla data, senza dati dei clienti. iPhone vuole sempre una notifica visibile.
 self.addEventListener('push', e => {

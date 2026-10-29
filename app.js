@@ -1,7 +1,7 @@
 // L'app di F1: il foglio diventa la giornata, senza rete. Tutto resta nel telefono (localStorage):
 // via e numero escono solo nei link che Riccardo apre lui. Il testo del foglio entra solo con textContent.
 import * as pdfjs from './vendor/pdf.min.mjs';
-import { estraiGeometria, leggiFoglio } from './lettore.js';
+import { estraiGeometria, leggiFoglio, tipoFile } from './lettore.js';
 import { nuovaGiornata, unisci, segna, aggiungi, ordinati } from './giornata.js';
 import { compilaPdf } from './compila.js';
 import { naviga, chiama, stoArrivando, testoArrivo } from './link.js';
@@ -25,6 +25,8 @@ const MESSAGGI = {
   colonne: 'Non trovo le colonne del foglio dei turni (CLIENTE, TIPOLOGIA ODL, INDIRIZZO…). È il file giusto?',
   bordi: 'Non riesco a leggere la tabella di questo foglio.',
   vuoto: 'Nel foglio non trovo interventi.',
+  foto: 'È una foto: Giro per ora legge il foglio in PDF, quello che manda l’ufficio. Chiedi il PDF, oppure fai arrivare i turni dall’ufficio.',
+  altro: 'Questo file non è un PDF: Giro per ora legge il foglio dei turni in PDF, quello che manda l’ufficio.',
 };
 
 // ---------- archivio nel telefono ----------
@@ -77,11 +79,13 @@ async function apriBytes(bytes) {
 
 async function leggiEApri(bytes, ingresso) {
   let foglio;
+  const tipo = tipoFile(bytes);
   try {
+    if (tipo !== 'pdf') throw new Error(tipo);
     const doc = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
     foglio = leggiFoglio(await estraiGeometria(doc, pdfjs.OPS), new Date());
   } catch {
-    foglio = { errore: 'file' };
+    foglio = { errore: tipo === 'pdf' ? 'file' : tipo };
   }
   if (foglio.errore || !foglio.data?.iso) {
     stato.avviso = { errore: true, testo: foglio.errore ? MESSAGGI[foglio.errore] ?? 'Non riesco ad aprire questo file.'
@@ -445,15 +449,28 @@ async function aggiornaGuida() {
     const p = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, { enableHighAccuracy: false, maximumAge: 120000, timeout: 20000 }));
     dove = comuneVicino(tabellaComuni, strade.comuni, p.coords.latitude, p.coords.longitude);
     doveAlle = Date.now();
+    riempiGuida(); // subito coi minuti che ci sono, poi quelli di OpenRouteService che mancano
+    await prendiMinuti([...document.querySelectorAll('[data-guida-i]')].map(el => chiave(stato.giorno?.giornata.interventi[+el.dataset.guidaI]?.comune ?? '')));
   } catch { /* senza permesso o senza tabella il posto resta vuoto */ }
   riempiGuida();
+}
+// I minuti di OpenRouteService (funzione «percorso», Federico 29/10) da dove sei: si chiedono una volta per coppia e restano nel
+// telefono; alla funzione vanno solo le chiavi dei due comuni, mai la posizione
+const MINUTI = 'giro:minuti';
+async function prendiMinuti(arrivi) {
+  const ors = leggiLS(MINUTI) ?? {};
+  const mancano = [...new Set(arrivi)].filter(k => k && dove && k !== dove && !Number.isFinite(ors[`${dove}|${k}`]));
+  if (!mancano.length || !navigator.onLine) return;
+  const { percorsoFra } = await import('./casa3d/mappa.js');
+  for (const k of mancano) { const p = await percorsoFra(dove, k); if (Number.isFinite(p?.secondi)) ors[`${dove}|${k}`] = Math.round(p.secondi / 60); }
+  scriviLS(MINUTI, Object.keys(ors).length > 400 ? {} : ors); // ponytail: oltre 400 coppie si riparte da zero, la funzione le ha tutte
 }
 function riempiGuida() {
   for (const el of document.querySelectorAll('[data-guida-i]')) {
     const i = stato.giorno?.giornata.interventi[+el.dataset.guidaI];
     // una posizione di più di 10 minuti fa non dice più dove sei (galleria, GPS fermo): meglio niente
     const fresca = dove && Date.now() - doveAlle < 10 * 60e3;
-    const m = fresca && strade && i ? minutiGuida(strade, dove, chiave(i.comune)) : null;
+    const m = fresca && strade && i ? minutiGuida(strade, dove, chiave(i.comune), leggiLS(MINUTI) ?? {}) : null;
     el.textContent = m == null ? '' : m === 0 ? 'in zona' : durata(m);
   }
 }
@@ -790,7 +807,8 @@ async function apriCasa3d(casa, scritta, comandi, ripiego) {
 }
 
 // Il giro di oggi per la mappa della casa: tappe (interventi di fila nello stesso comune) nell'ordine del foglio, la prossima, i tratti
-// fatti, quello da guidare, lo stretto di «Prima di partire» (puntoStretto, non ricalcolato) e i minuti di strade.json come sotto Naviga
+// fatti, quello da guidare, lo stretto di «Prima di partire» (puntoStretto, non ricalcolato) e i minuti: quelli di OpenRouteService
+// del percorso disegnato (casa3d/casa.js), e strade.json solo dove il percorso non c'è
 const caricaComuni = async () => (tabellaComuni ??= await (await fetch('comuni.json')).json());
 // le tappe: interventi di fila nello stesso comune, col centro del comune (comuni.json)
 function tappeDi(giro, centri) {

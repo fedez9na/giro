@@ -15,6 +15,15 @@ const r1 = v => Math.round(v * 10) / 10;
 const lettura = (p, q) => (Math.abs(p.y - q.y) > 3 ? q.y - p.y : p.x - q.x);
 export const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
 
+// Si può scegliere qualunque file (Federico, 29/10): il tipo si capisce dai primi byte, non dal nome né da quello che dice il
+// telefono (l'iPhone a volte non riconosce un PDF arrivato da WhatsApp e lo rende grigio nel selettore).
+export function tipoFile(b) {
+  const testa = String.fromCharCode(...b.subarray(0, 1024));
+  if (testa.includes('%PDF')) return 'pdf'; // la norma lo vuole nei primi 1024 byte, non per forza in testa
+  if ((b[0] === 0xff && b[1] === 0xd8) || (b[0] === 0x89 && b[1] === 0x50) || /^....ftyp(hei[cs]|mif1|avif)/.test(testa)) return 'foto';
+  return 'altro';
+}
+
 // Da un documento pdf.js a testi e linee. `OPS` è pdfjs.OPS (passato da fuori: qui niente import di pdf.js).
 export async function estraiGeometria(doc, OPS) {
   if (doc.numPages !== 1) return { pagine: doc.numPages, testi: [], v: [], h: [] };
