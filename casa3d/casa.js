@@ -677,6 +677,9 @@ export async function apriCasa(op) {
     const coloreFisso = op.colore ?? null;
     let phiLed = [], phiLuci = [], camMossa = true;
     function coloriLed() {
+      // finestra ancora senza misura (browser appena aperto): la proiezione darebbe NaN e coloreLed si romperebbe, spegnendo la
+      // stanza per tutta la sessione (08/11). Le direzioni si calcolano alla prossima misura (camMossa resta vera).
+      if (!fit.W || !fit.H) return;
       const a = document.querySelector('.cornice-led')?.getAnimations?.()[0];
       const dur = Number(a?.effect?.getTiming?.().duration) || 5000;
       const ang = a && !fermo ? ((Number(a.currentTime) || 0) % dur) / dur * 360 : 0;

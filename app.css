@@ -1,28 +1,26 @@
-/* Il canone, fatto per bene. iPhone: liste raggruppate di iOS coi colori di sistema nella variante «aumenta contrasto»
-   (al sole serve). Android: Material 3 come le app Google. Chiaro o scuro lo decide il telefono, come WhatsApp e Maps. */
+/* La grammatica resta quella del telefono: liste raggruppate di iOS sull'iPhone, Material 3 sull'Android. I colori sono della
+   stanza (Federico, 08/11: la «miscela»): di giorno la carta del giro (crema misurato #f0ece4) con l'inchiostro blu del percorso,
+   di notte il legno scuro con l'oro della lampada. Chiaro o scuro lo decide il telefono, come WhatsApp e Maps. Contrasti: tutti ≥ 4,5:1. */
 
 :root {
-  /* iOS, chiaro (systemGroupedBackground, celle, label; tinta e stati in alto contrasto) */
-  --sfondo: #f2f2f7; --cella: #ffffff; --testo: #000000; --testo-2: #4a4a4f; --separatore: #c6c6c8;
-  --tinta: #0040dd; --tinta-tenue: rgba(0, 64, 221, .1); --su-tinta: #ffffff;
-  --verde: #1e7b34; --rosso: #d70015; --raggio: 10px; --raggio-tasto: 12px; /* verde: 5,3:1 su bianco (quello di Apple fa 4,4) */
+  --sfondo: #efe8da; --cella: #fbf7ef; --testo: #1d1a15; --testo-2: #574f43; --separatore: #d6c9b1;
+  --tinta: #2440b8; --tinta-tenue: rgba(36, 64, 184, .1); --su-tinta: #ffffff;
+  --verde: #1e6b32; --rosso: #b3261e; --raggio: 10px; --raggio-tasto: 12px;
+  --luce: #a86400; /* le tacche della giornata: oro scurito per la carta (3,8:1) */
   --font: -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --sfondo: #000000; --cella: #1c1c1e; --testo: #ffffff; --testo-2: #aeaeb2; --separatore: #38383a;
-    --tinta: #409cff; --tinta-tenue: rgba(64, 156, 255, .16); --su-tinta: #000000; --verde: #30db5b; --rosso: #ff6961; }
+  :root { --sfondo: #14100c; --cella: #201912; --testo: #f4ecdc; --testo-2: #bfb29b; --separatore: #3b3127;
+    --tinta: #ffc46b; --tinta-tenue: rgba(255, 196, 107, .14); --su-tinta: #1a1208; --verde: #7fd99a; --rosso: #ff8a7a; --luce: #ffc46b; }
 }
-/* Android: ruoli colore Material 3 (palette delle app Google) */
+/* Android: i ruoli colore di Material 3, con gli stessi colori */
 [data-os="android"] {
-  --sfondo: #e9eef6; --cella: #ffffff; --testo: #1f1f1f; --testo-2: #444746; --separatore: #c4c7c5;
-  --tinta: #0b57d0; --tinta-tenue: #d3e3fd; --su-tinta: #ffffff; --su-tinta-tenue: #041e49;
-  --verde: #146c2e; --rosso: #b3261e; --raggio: 16px; --raggio-tasto: 999px;
+  --tinta-tenue: #dfe2f1; --su-tinta-tenue: #172a78; --raggio: 16px; --raggio-tasto: 999px;
   --font: Roboto, system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  [data-os="android"] { --sfondo: #131314; --cella: #1e1f20; --testo: #e3e3e3; --testo-2: #c4c7c5; --separatore: #444746;
-    --tinta: #a8c7fa; --tinta-tenue: #0842a0; --su-tinta: #062e6f; --su-tinta-tenue: #d3e3fd; --verde: #6dd58c; --rosso: #f2b8b5; }
+  [data-os="android"] { --tinta-tenue: #3d2f1c; --su-tinta-tenue: #ffdcaa; }
 }
 
 /* Dynamic Type su iPhone: la dimensione del testo segue quella scelta nelle Impostazioni */
@@ -124,12 +122,12 @@ label.riga { cursor: text; }
 
 /* «Segnato OK · Annulla»: snackbar su Android, barra in basso su iPhone */
 .avviso-basso { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 5; display: flex; align-items: center; gap: 12px;
-  min-height: 52px; padding: 4px 8px 4px 16px; border-radius: 12px; background: #1c1c1e; color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+  min-height: 52px; padding: 4px 8px 4px 16px; border-radius: 12px; background: #2a221a; color: #f4ecdc; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
 .avviso-basso span { flex: 1; }
-.avviso-basso button { min-height: 44px; padding: 0 12px; border: 0; background: none; color: #64aaff; font-weight: 600; }
-@media (prefers-color-scheme: dark) { .avviso-basso { background: #e5e5ea; color: #000; } .avviso-basso button { color: #0040dd; } }
-[data-os="android"] .avviso-basso { border-radius: 4px; background: #303030; } /* Material: inverse surface */
-[data-os="android"] .avviso-basso button { min-height: 48px; color: #a8c7fa; font-weight: 500; }
+.avviso-basso button { min-height: 44px; padding: 0 12px; border: 0; background: none; color: #ffc46b; font-weight: 600; }
+@media (prefers-color-scheme: dark) { .avviso-basso { background: #efe8da; color: #1d1a15; } .avviso-basso button { color: #2440b8; } }
+[data-os="android"] .avviso-basso { border-radius: 4px; } /* Material: inverse surface */
+[data-os="android"] .avviso-basso button { min-height: 48px; font-weight: 500; }
 .testata .azioni { padding-top: 14px; }
 
 /* ---------- prima di partire, prova del foglio ---------- */
@@ -292,7 +290,9 @@ body:has(.mappa-foglio) { background: #1b120c; } /* mentre la carta si prepara: 
   .mappa-foglio .maniglia { display: none; }
   .mappa-barra { right: min(420px, 46vw); }
 }
-@media (prefers-reduced-motion: no-preference) { .mappa-foglio { animation: foglio-sale .45s cubic-bezier(.2, .8, .2, 1) both; } }
+@media (prefers-reduced-motion: no-preference) { .mappa-foglio { animation: foglio-sale .45s cubic-bezier(.2, .8, .2, 1) backwards; } }
+/* «backwards», non «both»: finita la salita il foglio non deve tenere un transform, sennò fa da riferimento ai position: fixed e la barra
+   «Annulla» finiva in fondo al foglio, fuori schermo (08/11, test/annulla-carta.prova.mjs) */
 @keyframes foglio-sale { from { transform: translateY(60px); opacity: 0; } }
 /* i cartellini delle tappe sulla carta (casa3d/casa.js): il numero sul punto vero, la carta col filo dove c'è posto */
 .casa-carte { position: fixed; inset: 0; z-index: 40; pointer-events: none; font-family: var(--font); }
@@ -408,3 +408,49 @@ button.insegna:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 /* i due tasti restano in fondo allo schermo mentre si scorre la lista */
 .foto-tasti { position: sticky; bottom: calc(-16px - env(safe-area-inset-bottom, 0px)); background: var(--sfondo); padding: 10px 0 calc(env(safe-area-inset-bottom, 0px) + 16px); }
 .foto-tasti .riga { margin: 0 16px; width: calc(100% - 32px); }
+
+/* ---------- La «miscela» (Federico, 08/11): la prossima tappa su un tabellone a palette, uguale di giorno e di notte ---------- */
+.lista:has(> .prossimo), .prossimo { background: #121110; color: #f3efe6; }
+.prossimo .quando { color: #ffcf4a; }
+.prossimo .quando .manca, .prossimo .quando .manca:not(:empty)::before, .prossimo .cosa, .prossimo .meteo-riga { color: #b9b2a5; }
+.prossimo .chi { color: #f3efe6; }
+.prossimo .nota { color: #ff8a7a; }
+.prossimo .meteo-tag, .prossimo .allerta, .prossimo .cielo[data-tipo="temporale"] { color: #ffb340; }
+.prossimo .cielo[data-tipo^="sole"] { color: #ffc840; }
+.prossimo .cielo[data-tipo="pioggia"] { color: #6aa9ff; }
+.prossimo .cielo[data-tipo="neve"] { color: #8fd3ff; }
+.prossimo .azioni a, .prossimo .azioni button { background: #262422; color: #ffcf4a; }
+.prossimo .apri-scheda { color: #ffcf4a; }
+.tabellone { text-transform: uppercase; font-weight: 800; letter-spacing: .02em; line-height: 1.05; margin: 4px 0 6px;
+  font-size: min(1.6rem, calc((100vw - 64px) / (var(--lettere, 10) * .82))); } /* la parola più lunga sta sempre su una riga */
+.tabellone .parola { display: inline-block; white-space: nowrap; }
+.pal { display: inline-block; position: relative; min-width: .72em; text-align: center; background: #262422; border-radius: 4px;
+  margin: 0 1px 2px 0; padding: 2px 1px 1px; }
+.pal > b { display: block; font-weight: inherit; }
+.pal::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1.5px; background: #121110; z-index: 1; }
+.pal.vuota { background: none; min-width: .35em; }
+.pal.vuota::after { display: none; }
+@media (prefers-reduced-motion: no-preference) { /* gira una volta per tappa: ~7 volte al giorno, mai a ogni tocco */
+  .pal.gira::before { content: attr(data-prima); position: absolute; inset: 0; padding: inherit; background: inherit; border-radius: inherit;
+    animation: pal-esce .14s ease-in calc(var(--k) * 28ms) both; }
+  .pal.gira > b { animation: pal-entra .2s cubic-bezier(.2, .8, .2, 1) calc(var(--k) * 28ms + .14s) both; }
+}
+@keyframes pal-esce { to { transform: perspective(240px) rotateX(90deg); visibility: hidden; } }
+@keyframes pal-entra { from { transform: perspective(240px) rotateX(-90deg); } }
+
+/* le tacche della giornata: una per intervento, accese quelle fatte (la luce della stanza) */
+.avanza { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.avanza .tacche { display: flex; gap: 4px; flex: 1; max-width: 240px; }
+.avanza i { flex: 1; height: 5px; border-radius: 3px; background: var(--separatore); }
+.avanza i.su { background: var(--luce); }
+@media (prefers-color-scheme: dark) { .avanza i.su { box-shadow: 0 0 8px var(--luce); } }
+.avanza > span:last-child { font-size: .9375rem; font-weight: 600; color: var(--testo-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* l'OK è la spunta della penna del tavolo; quella appena segnata si disegna una volta */
+.esito-ok.spunta { display: inline-flex; color: var(--tinta); }
+.esito-ok.spunta svg { width: 26px; height: 26px; }
+.esito-ok.spunta path { stroke-width: 2.6; }
+@media (prefers-reduced-motion: no-preference) {
+  .esito-ok.spunta.appena path { stroke-dasharray: 1; animation: spunta .45s cubic-bezier(.3, .7, .3, 1) .2s both; }
+}
+@keyframes spunta { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }

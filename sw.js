@@ -1,5 +1,5 @@
 // Senza rete: i file dell'app stanno in cache e si servono da lì. Il PDF condiviso (Android) arriva qui come POST.
-const VERSIONE = 'giro-13';
+const VERSIONE = 'giro-14';
 const OCR = 'ocr-tesseract-7.0.0'; // cambia col motore in vendor/tesseract/: la cache vecchia allora si cancella
 const FILE = ['./', 'index.html', 'app.css', 'app.js', 'lettore.js', 'giornata.js', 'compila.js', 'link.js', 'margini.js', 'calendario.js', 'testi.js', 'meteo.js', 'parete.js', 'turni.js', 'cifra.js', 'ufficio.js', 'stanza.js', 'vendor/supabase.js', 'comuni.json', 'strade.json', 'vendor/Bangers-Regular.ttf',
   'manifest.webmanifest', 'icona.svg', 'icona-192.png', 'icona-512.png',

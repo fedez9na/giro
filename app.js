@@ -268,6 +268,7 @@ const ICONE = { // disegnate apposta, tutte con lo stesso tratto
   naviga: 'M12 2 4.5 20.3l.7.7L12 18l6.8 3 .7-.7z',
   chiama: 'M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z',
   messaggio: 'M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2z',
+  spunta: 'M2.5 12.5c2.3 1.6 4 4 5.6 6.4C11.3 12.5 15.3 7.7 21.5 3.6', // l'OK segnato con la penna del tavolo
   chevron: 'M9 6l6 6-6 6', indietro: ANDROID ? 'M20 12H4m6-6-6 6 6 6' : 'M15 5l-7 7 7 7', // Material: freccia; iOS: ‹
   foglio: 'M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V8h4.5M8 13h8M8 17h6',
   info: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 7.5v7m0-10v.5',
@@ -393,8 +394,26 @@ function apriGiorno(iso) {
   vai('#/');
 }
 
+// La prossima tappa su un tabellone a palette (Federico, 08/11: la «miscela»). Quando cambia (un esito segnato, un altro giorno)
+// le lettere girano una volta, da quelle di prima a quelle nuove; il testo resta quello del comune (si legge e si copia uguale).
+let tabellone = null;
+function palette(nome, id) {
+  const prima = tabellone && tabellone.id !== id ? tabellone.nome : null;
+  tabellone = { id, nome };
+  const parole = nome.split(' ');
+  let k = 0;
+  const lettera = c => { const vecchia = prima ? (prima[k] ?? ' ') : null; k++;
+    return h('span', { class: prima ? 'pal gira' : 'pal', 'data-prima': vecchia, style: prima ? `--k:${k}` : null }, h('b', {}, c)); };
+  return h('div', { class: 'dove tabellone', role: 'heading', 'aria-level': '3', 'aria-label': nome, style: `--lettere:${Math.max(...parole.map(p => p.length))}` },
+    parole.flatMap((p, j) => [h('span', { class: 'parola', 'aria-hidden': 'true' }, [...p].map(lettera)),
+      j < parole.length - 1 && (k++, h('span', { class: 'pal vuota', 'aria-hidden': 'true' }, ' '))]));
+}
+// l'OK: la spunta a penna; con pathLength 1 si disegna dall'inizio alla fine (app.css, .spunta.appena)
+const spunta = () => { const s = icona('spunta', false); s.firstChild.setAttribute('pathLength', '1'); return s; };
+
 function schermoGiornata() {
   const g = stato.giorno.giornata;
+  const appena = stato.spunta; stato.spunta = null; // l'OK appena segnato: la sua spunta si disegna una volta
   const data = new Date(`${stato.iso}T12:00`);
   const oggi = isoDi(new Date()) === stato.iso;
   const giro = ordinati(g);
@@ -406,7 +425,8 @@ function schermoGiornata() {
     h('span', { class: 'ora' }, hm(i.orario.da) || '—', !i.esito.stato && tagCielo(i)),
     h('span', { class: 'corpo' }, h('div', { class: 'principale' }, nomeComune(i.comune)),
       h('div', { class: 'secondaria' }, tipo(i.tipologia)), !i.esito.stato && tagMeteo(i), !i.esito.stato && notePer(i) && h('div', { class: 'nota' }, notePer(i))),
-    i.esito.stato && h('span', { class: i.esito.stato === 'OK' ? 'esito-ok' : 'esito-ko' }, i.esito.stato),
+    i.esito.stato === 'OK' && h('span', { class: i.id === appena ? 'esito-ok spunta appena' : 'esito-ok spunta', role: 'img', 'aria-label': 'OK' }, spunta()),
+    i.esito.stato && i.esito.stato !== 'OK' && h('span', { class: 'esito-ko' }, i.esito.stato),
     h('span', { class: 'chevron' }, icona('chevron', false)));
   const imp = impostazioni();
   const online = !!stato.giorno.online; // turni arrivati dall'ufficio: gli esiti tornano da soli, il PDF non c'è
@@ -414,15 +434,16 @@ function schermoGiornata() {
   return [
     h('div', { class: 'barra' }, h('button', { type: 'button', class: 'indietro', onclick: () => vai('#/casa') }, 'Parete'),
       h('button', { type: 'button', class: 'azione', onclick: apriFile }, 'Foglio nuovo')),
-    h('div', { class: 'titolo-grande' }, h('h1', {}, titoloGiorno()),
-      h('p', {}, `${dataTesto} · ${giro.length} interventi, ${fatti.length} fatti`)),
+    h('div', { class: 'titolo-grande' }, h('h1', {}, titoloGiorno()), h('p', {}, dataTesto),
+      h('div', { class: 'avanza' }, h('span', { class: 'tacche', 'aria-hidden': 'true' }, giro.map((_, k) => h('i', { class: k < fatti.length ? 'su' : null }))),
+        h('span', {}, `${fatti.length} di ${giro.length} fatti`))),
     stato.avviso && gruppoAvviso(),
     prossimo && !stato.giorno.primaVisto && gruppoPrimaDiPartire(giro, true),
     prossimo && h('section', { class: 'gruppo' }, h('h2', { class: 'forte' }, 'Prossimo'),
       h('div', { class: 'lista' }, h('div', { class: 'prossimo' },
         h('div', { class: 'quando' }, quando(prossimo), tagCielo(prossimo), h('span', { class: 'manca', 'data-manca': String(indice(prossimo)) })),
         notePer(prossimo) && h('div', { class: 'nota' }, notePer(prossimo)),
-        h('div', { class: 'dove' }, nomeComune(prossimo.comune)),
+        palette(nomeComune(prossimo.comune), prossimo.id),
         h('div', { class: 'chi' }, nomeCliente(prossimo.cliente)),
         h('div', { class: 'cosa' }, tipo(prossimo.tipologia)),
         h('div', { class: 'meteo-riga' }, tagMeteo(prossimo)),
@@ -744,6 +765,7 @@ function schermoScheda(i, focusTelefono) {
     const prima = i.esito.stato;
     cambia(g => segna(g, i.id, { stato: prima === s ? null : s }));
     if (s === 'OK' && prima !== 'OK') {
+      stato.spunta = i.id;
       // OK: torna alla giornata (il prossimo è già in cima) con «Annulla» per qualche secondo
       stato.annulla = { id: i.id, testo: `${nomeComune(i.comune)} segnato OK` };
       // allo scadere si toglie solo la barra: ridisegnare chiuderebbe la tastiera se intanto sta scrivendo in un'altra scheda
