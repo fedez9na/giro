@@ -1,8 +1,10 @@
 // Senza rete: i file dell'app stanno in cache e si servono da lì. Il PDF condiviso (Android) arriva qui come POST.
-const VERSIONE = 'giro-12';
+const VERSIONE = 'giro-13';
+const OCR = 'ocr-tesseract-7.0.0'; // cambia col motore in vendor/tesseract/: la cache vecchia allora si cancella
 const FILE = ['./', 'index.html', 'app.css', 'app.js', 'lettore.js', 'giornata.js', 'compila.js', 'link.js', 'margini.js', 'calendario.js', 'testi.js', 'meteo.js', 'parete.js', 'turni.js', 'cifra.js', 'ufficio.js', 'stanza.js', 'vendor/supabase.js', 'comuni.json', 'strade.json', 'vendor/Bangers-Regular.ttf',
   'manifest.webmanifest', 'icona.svg', 'icona-192.png', 'icona-512.png',
   'vendor/pdf.min.mjs', 'vendor/pdf.worker.min.mjs', 'vendor/pdf-lib.esm.min.js',
+  'foto.js', // 36 kB: la foto del foglio si legge anche senza rete dopo un aggiornamento (il motore sta nella cache OCR)
   // la casa fotografata: si apre a ogni avvio, quindi si scaricherebbe comunque subito; in cache apre anche senza rete dopo un
   // aggiornamento (0,85 MB gzip). La carta del giorno (tile di OpenFreeMap e percorsi) no: la scarica casa3d/mappa.js quando
   // arriva il foglio, nelle cache «mappa:<giorno>», che qui sotto non si cancellano
@@ -22,7 +24,7 @@ self.addEventListener('install', e => e.waitUntil(caches.open(VERSIONE)
 // Una versione nuova ricarica subito le pagine aperte (Federico, 29/10: alla prima apertura dopo un rilascio vedeva ancora la
 // versione vecchia, «dove sono tutte le modifiche?»). Solo se prima c'era un'altra versione: alla primissima installazione no.
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(async k => {
-  const vecchie = k.filter(n => n !== VERSIONE && n !== 'condivisi' && n !== 'parete' && !n.startsWith('mappa:'));
+  const vecchie = k.filter(n => n !== VERSIONE && n !== 'condivisi' && n !== 'parete' && n !== OCR && !n.startsWith('mappa:'));
   await Promise.all(vecchie.map(n => caches.delete(n)));
   await self.clients.claim();
   if (vecchie.some(n => n.startsWith('giro-'))) for (const c of await self.clients.matchAll({ type: 'window' })) c.navigate(c.url).catch(() => {});
@@ -67,6 +69,14 @@ self.addEventListener('fetch', e => {
   }
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   if (url.pathname.endsWith('/meteo.json')) return; // il meteo del lavoro giornaliero: sempre dalla rete (senza rete l'app usa quello salvato)
+  // il motore OCR (6,7 MB, foto del foglio): fuori dal precache, si scarica alla prima foto e resta anche quando cambia VERSIONE
+  if (url.pathname.includes('/vendor/tesseract/')) {
+    e.respondWith(caches.open(OCR).then(async c => (await c.match(e.request, { ignoreSearch: true })) ?? fetch(e.request).then(r => {
+      if (r.ok) c.put(e.request, r.clone());
+      return r;
+    })));
+    return;
+  }
   // dalla cache subito (funziona senza rete), e intanto si aggiorna: alla prossima apertura c'è la versione nuova
   e.respondWith(caches.open(VERSIONE).then(async c => {
     const inCache = await c.match(e.request, { ignoreSearch: true });

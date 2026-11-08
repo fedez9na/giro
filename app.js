@@ -25,7 +25,14 @@ const MESSAGGI = {
   colonne: 'Non trovo le colonne del foglio dei turni (CLIENTE, TIPOLOGIA ODL, INDIRIZZO…). È il file giusto?',
   bordi: 'Non riesco a leggere la tabella di questo foglio.',
   vuoto: 'Nel foglio non trovo interventi.',
-  foto: 'È una foto: Giro per ora legge il foglio in PDF, quello che manda l’ufficio. Chiedi il PDF, oppure fai arrivare i turni dall’ufficio.',
+  // la foto o lo screenshot del foglio (foto.js)
+  immagine: 'Non riesco ad aprire questa foto. Prova con uno screenshot del foglio.',
+  motore: 'Per leggere la prima foto serve la rete, una volta sola (3 MB): poi il lettore resta nel telefono. Riprova con la rete.',
+  tabella: 'Nella foto non trovo la tabella dei turni. Inquadra tutto il foglio, dritto e con la luce.',
+  piccola: 'Il foglio nella foto è troppo piccolo per leggerlo bene. Avvicinati, oppure allarga il foglio con due dita prima dello screenshot.',
+  'data-foto': 'Nella foto non leggo bene la data del foglio. Rifalla più da vicino, con la riga in alto ben visibile.',
+  tagliata: 'Nella foto la tabella continua sotto: manca il fondo del foglio, o qualcosa lo copre (negli screenshot, la tastiera). Rifalla con tutto il foglio.',
+  lettura: 'Non riesco a leggere questa foto. Rifalla con il foglio dritto e intero, senza pieghe o dita sopra.',
   altro: 'Questo file non è un PDF: Giro per ora legge il foglio dei turni in PDF, quello che manda l’ufficio.',
 };
 
@@ -78,9 +85,15 @@ async function apriBytes(bytes) {
 }
 
 async function leggiEApri(bytes, ingresso) {
-  let foglio;
+  let foglio, pdf = bytes;
   const tipo = tipoFile(bytes);
-  try {
+  if (tipo === 'foto') {
+    ingresso?.chiudi(); // la foto ha il suo schermo, con l'avanzamento e la conferma
+    ingresso = null;
+    const letta = await leggiDaFoto(bytes);
+    if (letta.annullata) return vai('#/'); // ha annullato: non si salva niente
+    ({ foglio, pdf } = letta);
+  } else try {
     if (tipo !== 'pdf') throw new Error(tipo);
     const doc = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
     foglio = leggiFoglio(await estraiGeometria(doc, pdfjs.OPS), new Date());
@@ -103,13 +116,66 @@ async function leggiEApri(bytes, ingresso) {
   }
   const giornata = esistente ? unisci(esistente.giornata, foglio) : nuovaGiornata(foglio);
   stato.iso = foglio.data.iso;
-  stato.giorno = { giornata, pdf: aBase64(bytes), inviato: esistente?.inviato ?? null, meteo: esistente?.meteo ?? null, allerte: esistente?.allerte ?? null };
+  stato.giorno = { giornata, pdf: aBase64(pdf), inviato: esistente?.inviato ?? null, meteo: esistente?.meteo ?? null, allerte: esistente?.allerte ?? null, ...(tipo === 'foto' && { daFoto: true }) };
   stato.avviso = esistente ? avvisoCambi(giornata) : null;
   salva();
   scaricaMappa(stato.iso);
   vai(!esistente && stato.iso === isoDi(new Date()) ? '#/casa' : '#/'); // il foglio di oggi: la casa con la mappa; i cambi e gli altri giorni nella lista
   const primo = ordinati(giornata).find(i => !i.esito.stato);
   ingresso?.prima(primo ? `Prima tappa: ${nomeComune(primo.comune)}!` : 'Giornata già fatta!', primo?.orario.da ? `alle ${hm(primo.orario.da)}` : '');
+}
+
+// La foto (o lo screenshot) del foglio: si legge qui, nel telefono (foto.js), con l'avanzamento a schermo. Poi Riccardo vede
+// cosa è stato letto, coi punti incerti in giallo, e conferma o annulla: un OCR sbaglia, non si salva in silenzio.
+// → { foglio, pdf } (foglio può avere un errore) oppure { annullata: true }
+async function leggiDaFoto(bytes) {
+  const barra = h('progress', { max: '100', value: '0' });
+  const dice = h('p', { class: 'foto-stato', role: 'status' }, 'Leggo la foto…');
+  const schermo = h('div', { class: 'foto-lettura', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Lettura della foto del foglio' },
+    h('div', { class: 'foto-scheda' }, h('h2', {}, 'Leggo la foto del foglio'), barra, dice,
+      h('p', { class: 'foto-nota' }, 'La prima volta scarico il lettore (3 MB), poi resta nel telefono. La foto non esce dal telefono.')));
+  document.body.append(schermo);
+  try {
+    tabellaComuni ??= await (await fetch('comuni.json')).json();
+    const { leggiFoto } = await import('./foto.js');
+    // le tipologie già viste su questo telefono, dai PDF e dall'ufficio (non da altre foto): «FASTWEB 3,5» letto male torna «FASTWEB 3.5»
+    const tipologie = [...new Set(giorniSalvati().map(iso => leggiLS(CHIAVE + iso)).filter(g => g && !g.daFoto)
+      .flatMap(g => g.giornata?.interventi?.map(i => i.tipologia) ?? []).filter(Boolean))];
+    const letta = await leggiFoto(bytes, { comuni: Object.keys(tabellaComuni), tipologie,
+      avanzamento: p => { barra.value = p; dice.textContent = `Leggo la foto… ${p}%`; } });
+    if (letta.errore) return { foglio: { errore: letta.errore } };
+    if (!letta.foglio.data?.iso) return { foglio: { errore: 'data-foto' } };
+    return (await confermaFoto(schermo, letta.foglio)) ? letta : { annullata: true };
+  } catch {
+    return { foglio: { errore: 'motore' } }; // il lettore non si scarica (senza rete la prima volta)
+  } finally {
+    schermo.remove();
+  }
+}
+
+function confermaFoto(schermo, foglio) {
+  const incerto = (n, campo) => foglio.incerti.some(([k, q]) => k === n && q === campo);
+  const campo = (i, nome, testo, cls) => h('span', { class: `${cls}${incerto(i.n, nome) ? ' foto-incerto' : ''}` }, testo || (incerto(i.n, nome) ? '?' : ''));
+  const quanti = new Set(foglio.incerti.map(([n, q]) => `${n}${q}`)).size;
+  return new Promise(fatto => {
+    const va = h('button', { type: 'button', class: 'tasto-pieno', onclick: () => fatto(true) }, 'Va bene');
+    schermo.replaceChildren(h('div', { class: 'foto-scheda foto-letta' },
+      h('h2', {}, 'Ho letto la foto'),
+      h('p', {}, `${nomeGiorno(foglio.data.iso)} · ${foglio.interventi.length} interventi`),
+      quanti ? h('p', { class: 'foto-nota' }, quanti === 1 ? 'La parte in giallo non l’ho letta bene: guardala sul foglio. Se è sbagliata, annulla e rifai la foto più da vicino.'
+        : `Le ${quanti} parti in giallo non le ho lette bene: guardale sul foglio. Se sono sbagliate, annulla e rifai la foto più da vicino.`)
+        : h('p', { class: 'foto-nota' }, 'Controlla che ci siano tutti e che sia tutto come sul foglio.'),
+      h('ol', { class: 'foto-righe' }, foglio.interventi.map(i => h('li', {},
+        campo(i, 'orario', i.orario.da ? quando(i) : '', 'foto-ora'),
+        h('span', { class: 'foto-corpo' },
+          campo(i, 'comune', i.comune && nomeComune(i.comune), 'foto-comune'),
+          campo(i, 'tipologia', tipo(i.tipologia), 'foto-tipo'),
+          campo(i, 'cliente', i.cliente && nomeCliente(i.cliente), 'foto-cliente'),
+          (i.note || incerto(i.n, 'note')) && campo(i, 'note', i.note, 'foto-note'))))),
+      h('div', { class: 'foto-tasti' }, va, h('button', { type: 'button', class: 'riga azione-riga', onclick: () => fatto(false) }, 'Annulla'))));
+    schermo.scrollTop = 0;
+    va.focus({ preventScroll: true }); // si legge dall'inizio (giorno e quanti interventi), i tasti restano in fondo
+  });
 }
 
 // La parete d'ingresso: sceglie le copertine dalle sue foto; si salvano rimpicciolite, solo in questo telefono
@@ -762,8 +828,7 @@ function schermoCasa() {
   const comandi = h('div', { class: 'casa-comandi' },
     h('button', { type: 'button', class: 'casa-entra', onclick: async () => {
       if (!diOggi) return apriFile();
-      await casa3d?.api.chinati(); // si china sul tavolo, poi la lista
-      vai('#/');
+      vai(tre ? '#/mappa' : '#/'); // la stanza 3D: ci si china sulla carta del giro (senza: la lista, come prima)
     } }, diOggi ? `Il giro di ${titoloGiorno().toLowerCase()}` : 'Aggiungi ora'),
     altri.length ? h('div', { class: `casa-riga ${['', 'una', 'due', ''][altri.length]}` }, altri) : null,
     h('div', { class: 'casa-riga' }, shop,
@@ -777,13 +842,17 @@ function schermoCasa() {
   const casa = h('div', { class: tre ? 'casa tre-d' : 'casa' }, scritta, posto, comandi, ...cornice());
   if (!tre) { muroDom(); return [casa]; }
   // la stanza di prima resta sotto finché la nuova non è pronta; con gli stessi dati si riaggancia e basta
-  if (casa3d) { casa.classList.add('pronta'); requestAnimationFrame(() => casa3d?.api.lega({ contenitore: casa, insegnaEl: scritta, comandi })); }
+  if (casa3d) { // dalla carta del giro (Parete o tasto indietro): la camera torna su, i tasti appaiono a volo finito
+    casa.classList.add('pronta');
+    if (casa3d.api.modo() !== 'casa') casa.classList.add('in-volo');
+    requestAnimationFrame(() => casa3d?.api.casa({ contenitore: casa, insegnaEl: scritta, comandi }).then(() => casa.classList.remove('in-volo')));
+  }
   apriCasa3d(casa, scritta, comandi, muroDom);
   return [casa];
 }
 
-async function apriCasa3d(casa, scritta, comandi, ripiego) {
-  const turno = ++turnoCasa, valido = () => turno === turnoCasa && location.hash === '#/casa';
+async function apriCasa3d(casa, scritta, comandi, ripiego, vista = null) { // vista: aperta direttamente sulla carta del giro (#/mappa)
+  const turno = ++turnoCasa, valido = () => turno === turnoCasa && location.hash === (vista ? '#/mappa' : '#/casa');
   try {
     const c = miaStanza()?.colore ?? 'arcobaleno';
     const [parete, giro] = await Promise.all([leggiCopertine(), giroPerCasa()]);
@@ -796,15 +865,45 @@ async function apriCasa3d(casa, scritta, comandi, ripiego) {
     if (!valido()) return api.chiudi();
     casa3d?.api.chiudi();
     casa3d = { api, chiave: chiaveCasa };
-    casa.classList.add('pronta');
+    window.__casa3d = api; // per le prove
+    if (vista) api.giornata({ ...vista, ms: 0 }); else casa.classList.add('pronta');
   } catch (e) {
     console.warn('casa 3d', e);
     if (!valido()) return;
     casa3d?.api.chiudi(); casa3d = null;
-    casa.classList.remove('tre-d', 'pronta');
+    if (!vista) casa.classList.remove('tre-d', 'pronta');
     ripiego();
   }
 }
+
+// «Il giro di oggi» con la stanza 3D: la carta del giro davanti, quasi dall'alto, coi cartellini delle tappe (casa3d/casa.js), e sotto
+// la lista di sempre come un foglio che scorre su e giù (come Maps). Toccando una tappa o una riga si apre la sua scheda (#/i/N).
+// Telefono girato: il foglio sta a destra e la carta a sinistra.
+function schermoMappa() {
+  const [, ...lista] = schermoGiornata(); // la barra della lista no: qui ci sono le pillole sopra la carta
+  const barra = h('div', { class: 'mappa-barra' },
+    h('button', { type: 'button', class: 'mappa-pillola', onclick: () => vai('#/casa') }, icona('indietro', false), 'Parete'),
+    h('div', { class: 'mappa-titolo' }, h('b', {}, titoloGiorno()), h('span', {}, new Date(`${stato.iso}T12:00`).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' }))),
+    h('button', { type: 'button', class: 'mappa-pillola', onclick: apriFile }, 'Foglio nuovo'));
+  const foglio = h('div', { class: 'mappa-foglio' }, h('div', { class: 'maniglia', 'aria-hidden': 'true' }),
+    h('div', { class: 'casa-fonte mappa-fonte' }, 'Carta', // la carta del giro: OpenFreeMap (schema OpenMapTiles, dati OpenStreetMap, ODbL)
+      h('a', { href: 'https://www.openmaptiles.org/', target: '_blank', rel: 'noopener' }, '© OpenMapTiles'),
+      h('a', { href: 'https://www.openstreetmap.org/copyright', target: '_blank', rel: 'noopener' }, '© OpenStreetMap contributors')),
+    lista);
+  const vista = { area: () => { // in px della pagina con lo scorrimento a zero; offsetTop/Left: senza la salita animata del foglio
+    const b = barra.getBoundingClientRect();
+    return foglio.offsetLeft > innerWidth * 0.3 ? { x0: 12, x1: foglio.offsetLeft - 12, y0: b.bottom + 6, y1: innerHeight - 12 } // il foglio a destra
+      : { x0: 12, x1: innerWidth - 12, y0: b.bottom + 6, y1: foglio.offsetTop - 14 };                                             // il foglio sotto
+  } };
+  if (casa3d) requestAnimationFrame(() => casa3d?.api.giornata(vista));
+  else apriCasa3d(document.body, null, null, () => vai('#/'), vista); // aperta direttamente (o tornando da una scheda); senza 3D: la lista
+  return [barra, foglio];
+}
+// il foglio salito fin sotto le pillole: la barra prende il fondo, così il titolo non si legge sopra la lista
+addEventListener('scroll', () => {
+  const b = document.querySelector('.mappa-barra'), f = document.querySelector('.mappa-foglio');
+  if (b && f) b.classList.toggle('piena', f.getBoundingClientRect().top < b.getBoundingClientRect().bottom);
+}, { passive: true });
 
 // Il giro di oggi per la mappa della casa: tappe (interventi di fila nello stesso comune) nell'ordine del foglio, la prossima, i tratti
 // fatti, quello da guidare, lo stretto di «Prima di partire» (puntoStretto, non ricalcolato) e i minuti: quelli di OpenRouteService
@@ -839,7 +938,9 @@ async function giroPerCasa() {
   const tappe = tappeDi(giro, centri);
   const statoDi = t => (t.interventi.every(i => i.esito.stato) ? 'fatto' : t.interventi.includes(prossimo) ? 'prossimo' : 'poi');
   return {
-    tappe: tappe.map(t => ({ chiave: t.chiave, nome: t.nome, centro: t.centro, stato: statoDi(t), ora: t.interventi.includes(prossimo) ? hm(prossimo.orario.da) : '' })),
+    tappe: tappe.map(t => ({ chiave: t.chiave, nome: t.nome, centro: t.centro, stato: statoDi(t), ora: t.interventi.includes(prossimo) ? hm(prossimo.orario.da) : '',
+      interventi: t.interventi.map(i => ({ ora: hm(i.orario.da), esito: i.esito.stato, i: indice(i), prossimo: i === prossimo })) })), // per i cartellini della carta
+    stretto: stretto && chiave(stretto.da.comune) !== chiave(stretto.a.comune) ? { a: chiave(stretto.a.comune), nomeDa: nomeComune(stretto.da.comune), minuti: stretto.minuti } : null,
     tratti: tappe.slice(1).map((t, k) => ({ tipo: { fatto: 'fatto', prossimo: 'prossimo', poi: 'normale' }[statoDi(t)],
       stretta: !!stretto && tappe[k].interventi.includes(stretto.da) && t.interventi.includes(stretto.a),
       minuti: tab ? minutiGuida(tab, tappe[k].chiave, t.chiave) : null })),
@@ -940,13 +1041,14 @@ function disegna() {
   const app = document.getElementById('app');
   luci(miaStanza()?.colore); // le luci di chi è collegato adesso (o di nessuno): mai quelle di chi è uscito
   liberaMuro(muroCasa); muroCasa = null;
-  if (location.hash !== '#/casa') chiudiCasa3d(); // uscendo dalla casa non resta nessun contesto WebGL
+  if (location.hash !== '#/casa' && location.hash !== '#/mappa') chiudiCasa3d(); // uscendo dalla casa e dalla carta non resta nessun contesto WebGL
   const m = location.hash.match(/^#\/i\/(\d+)(\?telefono)?/);
   const i = m && stato.giorno?.giornata.interventi[+m[1]];
   const prova = location.hash === '#/prova' && stato.giorno && !stato.giorno.online; // un giorno dall'ufficio non ha il PDF
   const casa = location.hash === '#/casa';
   const conUfficio = location.hash === '#/ufficio' || location.hash === '#/scelta';
-  const schermo = casa ? schermoCasa() : location.hash === '#/scelta' ? schermoScelta() : conUfficio ? schermoUfficio() : i ? schermoScheda(i, !!m[2]) : prova ? [] : stato.giorno ? schermoGiornata() : schermoVuoto();
+  const mappa = location.hash === '#/mappa' && stato.giorno && reggeCasa3d(); // senza 3D o senza foglio: la lista
+  const schermo = casa ? schermoCasa() : location.hash === '#/scelta' ? schermoScelta() : conUfficio ? schermoUfficio() : i ? schermoScheda(i, !!m[2]) : prova ? [] : mappa ? schermoMappa() : stato.giorno ? schermoGiornata() : schermoVuoto();
   // la prova misura la larghezza del riquadro: si costruisce dopo che lo schermo è nella pagina
   const contenitore = h('div', { class: 'schermo' }, schermo);
   app.replaceChildren(contenitore);
@@ -1127,15 +1229,28 @@ function schermoUfficio() {
       h('p', { class: 'piede' }, 'Per entrare come tecnico usa il suo telefono, oppure esci prima dall’ufficio nella sua pagina.')];
   }
   if (!uff.p) {
-    const email = h('input', { type: 'email', autocomplete: 'username', autocapitalize: 'none', inputmode: 'email', placeholder: 'quella che ti ha dato l’ufficio' });
-    const pw = h('input', { type: 'password', autocomplete: 'current-password', placeholder: 'password' });
+    const email = h('input', { type: 'email', autocomplete: 'username', autocapitalize: 'none', autocorrect: 'off', spellcheck: 'false', inputmode: 'email', placeholder: 'quella che ti ha dato l’ufficio' });
+    // aria-label: col tasto dentro l'etichetta il campo si chiamerebbe «Password Mostra» (critico 29/10)
+    const pw = h('input', { type: 'password', autocomplete: 'current-password', autocapitalize: 'none', autocorrect: 'off', spellcheck: 'false', placeholder: 'password', 'aria-label': 'Password' });
+    const mostra = h('button', { type: 'button', class: 'mostra', onpointerdown: e => e.preventDefault(), onclick: () => { // il cursore resta nella password; la scritta cambia, quindi niente aria-pressed (ARIA APG)
+      const vedi = pw.type === 'password';
+      pw.type = vedi ? 'text' : 'password'; mostra.textContent = vedi ? 'Nascondi' : 'Mostra';
+    } }, 'Mostra');
     const errore = h('p', { class: 'piede errore-testo', role: 'alert' });
+    const sbaglia = (testo, campo) => { errore.textContent = testo; campo.focus(); };
     const entra = h('button', { type: 'submit', class: 'tasto-pieno' }, 'Collegati');
     return [barra, h('div', { class: 'titolo-grande' }, h('h1', {}, 'L’ufficio'), h('p', {}, 'I turni arrivano da soli, senza WhatsApp né File')),
       stato.avviso && gruppoAvviso(),
-      h('form', { onsubmit: async e => {
+      h('form', { novalidate: true, onsubmit: async e => {
         e.preventDefault();
-        entra.disabled = true; entra.textContent = 'Mi collego…'; errore.textContent = '';
+        errore.textContent = '';
+        // ciò che si controlla qui lo si dice preciso (Federico, 29/10: Riccardo aveva mandato l'email vuota); se è sbagliata l'email
+        // o la password lo dice ufficio.entra, chiedendolo alla funzione «accessi»
+        const em = email.value.trim();
+        if (!em) return sbaglia('Scrivi l’email che ti ha dato l’ufficio.', email);
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) return sbaglia('L’email non è scritta bene: deve essere tipo nome@gmail.com, tutta attaccata.', email);
+        if (!pw.value) return sbaglia('Scrivi la password.', pw);
+        entra.disabled = true; entra.textContent = 'Mi collego…';
         try {
           const p = await ufficio.entra(email.value, pw.value);
           if (p.ruolo === 'gestore') { location.href = 'gestore.html'; return; } // ha messo l'accesso dell'ufficio: la sua pagina è quella
@@ -1148,11 +1263,18 @@ function schermoUfficio() {
           uff.canale ??= await ufficio.ascolta(`turni:${uff.p.id}`, 'turni', async r => riceviTurni(await ufficio.apriTurni(uff.p, [r])));
           vai('#/casa'); // entrato: la sua casa, non la pagina dell'ufficio (Federico, 29/10)
           aggiornaDallUfficio();
-        } catch (x) { errore.textContent = x.message; entra.disabled = false; entra.textContent = 'Collegati'; }
+        } catch (x) {
+          if (x.campo === 'password') errore.replaceChildren('La password è sbagliata. Quella dell’ufficio è tipo ',
+            h('span', { style: 'white-space: nowrap' }, 'abcd-efgh-jkmn'), ' (tocca «Mostra» per vederla).'); // l'esempio non va a capo sul trattino
+          else errore.textContent = x.message;
+          if (x.campo) (x.campo === 'password' ? pw : email).focus();
+          entra.disabled = false; entra.textContent = 'Collegati';
+        }
       } },
       h('section', { class: 'gruppo' }, h('div', { class: 'lista' },
-        h('label', { class: 'riga' }, h('span', { class: 'etichetta' }, 'Email'), email),
-        h('label', { class: 'riga' }, h('span', { class: 'etichetta' }, 'Password'), pw)),
+        // etichette più strette che altrove: con «Mostra» la password intera deve starci anche su un iPhone da 375 punti
+        h('label', { class: 'riga' }, h('span', { class: 'etichetta', style: 'min-width: 4.6em' }, 'Email'), email),
+        h('label', { class: 'riga' }, h('span', { class: 'etichetta', style: 'min-width: 4.6em' }, 'Password'), pw, mostra)),
         errore, h('p', { class: 'piede' }, 'Email e password te le dà l’ufficio. Le scrivi una volta: poi il telefono resta collegato.')),
       entra),
       IPHONE && !installata() && h('p', { class: 'piede' }, 'Su iPhone collegati dall’icona di Giro sulla schermata Home (Condividi → «Aggiungi alla schermata Home»): è lì che arrivano le notifiche.')];
@@ -1205,7 +1327,7 @@ function apriMioAccesso() {
       errore.textContent = '';
       if (nuova.length < 10) { errore.textContent = 'La password nuova deve avere almeno 10 caratteri.'; return; }
       if (nuova !== ripeti) { errore.textContent = 'Le due password nuove non sono uguali.'; return; }
-      if (nuova === vecchia) { errore.textContent = 'La password nuova è uguale a quella di adesso.'; return; }
+      if (nuova === vecchia) { errore.textContent = 'La password nuova è uguale a quella di adesso.'; return; } // anche senza trattini lo controlla ufficio.cambiaMioAccesso
       occupato(true);
       try {
         uff.p = await ufficio.cambiaMioAccesso(uff.p, vecchia, uff.p.email, nuova);

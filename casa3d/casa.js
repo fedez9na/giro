@@ -3,7 +3,8 @@
 // la luce che arriva. Sopra, con la stessa camera, la pagina mette ciò che cambia: le sue copertine, la mappa del giro di oggi
 // (OpenStreetMap + OSRM, app/plastico/), il percorso a penna e pennarello, la luce dell'insegna. Tutto prende la luce della stanza.
 // Si carica solo arrivando su #/casa (import dinamico da app.js) e si chiude del tutto uscendo (niente contesti WebGL che restano).
-// Fatto in prototipi/design-v2/B-vera (stanza/costruisci.py, codifica.py, scena.js): qui la parte della casa, senza giornata 3D.
+// Fatto in prototipi/design-v2/B-vera (stanza/costruisci.py, codifica.py, scena.js): qui la casa e la giornata («Il giro di oggi»:
+// ci si china sul tavolo e la carta resta davanti, quasi dall'alto, coi cartellini delle tappe).
 import * as THREE from './vendor/three.module.min.js';
 import { riquadro, tiles as tilesDi, tile, percorso, decodifica, daTile } from './mappa.js';
 
@@ -11,6 +12,11 @@ const STANZA = new URL('./stanza/', import.meta.url).href;
 const LATO = 1.0, PIASTRA_Z = 0.35, PIANO = 0.014;
 const CARTA = 0.82;              // la carta sotto la mappa non è bianco puro (come in B-vera)
 const LENTO_MS = 50;             // sotto i 20 fotogrammi al secondo (mediana dei primi 30 coi LED accesi) i LED si fermano
+const PH_G = 1.43;               // la giornata: la carta vista quasi dall'alto (82 gradi)
+const COLORI_G = { normale: '#4a3c2c', prossimo: '#2c47c4', fatto: '#b3a790', stretta: '#e0962f' }; // il pennarello della giornata (B-vera)
+const LARGO_G = { normale: 3.6, prossimo: 5.5, fatto: 2.6, stretta: 5 };                            // px sullo schermo
+const durata = m => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`); // come margini.js
+const crea = (tag, classe, ...figli) => { const e = document.createElement(tag); if (classe) e.className = classe; e.append(...figli.filter(x => x != null && x !== false)); return e; };
 
 const LIVELLI = ['landuse', 'water', 'waterway', 'transportation'];
 const ABITATO = new Set(['residential', 'suburb', 'neighbourhood', 'quarter', 'industrial', 'commercial', 'retail']);
@@ -86,6 +92,7 @@ const VS_MONDO = 'uniform mat4 uSlabVP; varying vec2 vUv; varying vec4 vClip; vo
 // La tela sta in un suo strato fisso sotto la .casa (che in 3D è trasparente): così, quando l'app ridisegna la casa, la stanza
 // vecchia resta visibile finché la nuova non è pronta, e con gli stessi dati si riaggancia ai nuovi tasti senza rifarla (lega).
 export async function apriCasa(op) {
+  window.__casaCostruite = (window.__casaCostruite ?? 0) + 1; // per le prove: quante stanze si sono costruite
   const fermo = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let { contenitore, insegnaEl, comandi } = op;
   const strato = Object.assign(document.createElement('div'), { className: 'casa-strato' });
@@ -97,18 +104,20 @@ export async function apriCasa(op) {
   const chiudi = () => {
     if (!vivo) return;
     vivo = false; cancelAnimationFrame(idRaf); ro?.disconnect();
+    for (const f of pulizie) f(); // ciò che è nato dentro (ascoltatori, cartellini): non deve sopravvivere alla stanza
     for (const x of libera) x.dispose?.();
     r.dispose(); r.forceContextLoss();
     strato.remove();
     for (const u of urlFoto) URL.revokeObjectURL(u);
     if (window.__casa3d === api) window.__casa3d = null;
   };
-  const urlFoto = [];
+  const urlFoto = [], pulizie = [];
   let ro = null, api = null;
   try {
     r.setPixelRatio(Math.min(devicePixelRatio, 2));
     r.outputColorSpace = THREE.SRGBColorSpace;
     const scena = new THREE.Scene(), cam = new THREE.PerspectiveCamera(30, 1, 0.05, 40);
+    const gCasa = new THREE.Group(), gGiorno = new THREE.Group(); scena.add(gCasa, gGiorno); // la stanza fotografata; la carta del giorno
 
     // ---------- lastre, camera del render, tabella AgX ----------
     const caricatore = new THREE.TextureLoader();
@@ -168,10 +177,10 @@ export async function apriCasa(op) {
           s += uEsp * uLed * dec1(texture(tStri, c).r, uLogR.z) * texture(tGrad, vec2(t, 0.5)).rgb;  // il diffusore, col colore del punto
           float mu = texture(tMuro, c).r, ca = texture(tCarta, c).r;
           s *= mix(vec3(1.0), uMuro, mu) * mix(1.0, ${CARTA.toFixed(2)}, ca) * bordo;
-          gl_FragColor = vec4(agx(s), 1.0);
+          gl_FragColor = vec4(agx(s), uAlpha);
           ${FINE}
         }`,
-      depthTest: false, depthWrite: false, toneMapped: false }));
+      transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
     const scenaFondo = new THREE.Scene(), camFondo = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     const quadFondo = new THREE.Mesh(traccia(new THREE.PlaneGeometry(2, 2)), mFondo); quadFondo.frustumCulled = false; scenaFondo.add(quadFondo);
 
@@ -179,18 +188,24 @@ export async function apriCasa(op) {
     const AREA = { x0: MURO.poster.x0, y0: MURO.poster.y0, w: MURO.poster.w, h: MURO.poster.y0 - MURO.poster.y1 };
     const COLLAGE = [[0.0, 0.0, 0.17, 0.355, -1.0], [0.208, 0.012, 0.17, 0.355, 0.7], [0.416, 0.0, 0.17, 0.355, -0.5], [0.624, 0.01, 0.17, 0.355, 1.1], [0.832, 0.0, 0.168, 0.355, -0.8],
       [0.0, 0.41, 0.215, 0.445, 0.6], [0.262, 0.42, 0.215, 0.445, -0.9], [0.524, 0.41, 0.215, 0.445, 0.5], [0.786, 0.42, 0.214, 0.445, -0.6]];
-    const composta = p => { // le posizioni del poster shop, nell'area dei poster del render
+    // le posizioni del poster shop, nell'area dei poster del render. «spazio» (cm, 0-10, facoltativo) è la distanza fra le card scelta nel
+    // poster shop (Larghe 3, Vicine 1,2, Attaccate 0): in frazione di una card larga 17 cm (una copertina moderna). Senza: com'era
+    // (3% dell'area, card un filo storte). Con lo spazio le card si storcono in proporzione: attaccate stanno dritte e si toccano.
+    const composta = p => {
       const cols = p.tessere.map(t => t.col), rows = p.tessere.map(t => t.row);
       const c0 = Math.min(...cols), r0 = Math.min(...rows), nc = Math.max(...cols) - c0 + 1, nr = Math.max(...rows) - r0 + 1;
-      const gx = 0.03, gy = gx * AREA.w / AREA.h;
-      const w = Math.min((1 - gx * (nc - 1)) / nc, ((1 - gy * (nr - 1)) / nr) * 0.65 * AREA.h / AREA.w), hh = w / 0.65 * AREA.w / AREA.h;
+      const R = AREA.w / AREA.h, cm = Number.isFinite(p.spazio) ? Math.min(10, Math.max(0, p.spazio)) : null, f = cm == null ? null : cm / 17;
+      const w = f == null ? Math.min((1 - 0.03 * (nc - 1)) / nc, ((1 - 0.03 * R * (nr - 1)) / nr) * 0.65 / R)
+        : Math.min(1 / (nc + (nc - 1) * f), 1 / (R * (nr / 0.65 + (nr - 1) * f)));
+      const gx = f == null ? 0.03 : f * w, gy = gx * R, hh = w / 0.65 * R;
       const x0 = (1 - (nc * w + (nc - 1) * gx)) / 2, y0 = (1 - (nr * hh + (nr - 1) * gy)) / 2, pieghe = [-1.0, 0.7, -0.5, 1.1, -0.8, 0.6, -0.9, 0.5, -0.6];
-      return p.tessere.map((t, k) => [x0 + (t.col - c0) * (w + gx), y0 + (t.row - r0) * (hh + gy), w, hh, pieghe[k % pieghe.length], t.url]);
+      const storta = cm == null ? 1 : Math.min(1, cm / 3);
+      return p.tessere.map((t, k) => [x0 + (t.col - c0) * (w + gx), y0 + (t.row - r0) * (hh + gy), w, hh, pieghe[k % pieghe.length] * storta, t.url]);
     };
     const posti = Array.isArray(op.parete)
       ? op.parete.filter(b => b instanceof Blob).slice(0, COLLAGE.length).map((b, k) => { const u = URL.createObjectURL(b); urlFoto.push(u); return [...COLLAGE[k], u]; })
       : Array.isArray(op.parete?.tessere) && op.parete.tessere.length ? composta(op.parete) : [];
-    const poster = new THREE.Group(); scena.add(poster);
+    const poster = new THREE.Group(); gCasa.add(poster);
     const COC = ST.coc_px.muro, cocSchermo = { value: COC };
     const LUCE_LISCIA = `vec3 luceLiscia(vec2 uv) { vec2 d = 2.5 / vec2(${WS}.0, ${HS}.0);
       return (2.0 * luceStanza(uv) + luceStanza(uv + vec2(d.x, 0.0)) + luceStanza(uv - vec2(d.x, 0.0)) + luceStanza(uv + vec2(0.0, d.y)) + luceStanza(uv - vec2(0.0, d.y))) / 6.0; }`;
@@ -292,7 +307,7 @@ export async function apriCasa(op) {
       transparent: true, depthWrite: false, depthTest: false, toneMapped: false }));
     const foglio = new THREE.Mesh(traccia(new THREE.PlaneGeometry(LATO, LATO)), mFoglio);
     foglio.rotation.x = -Math.PI / 2; foglio.position.set(0, PIANO, PIASTRA_Z); foglio.renderOrder = 2;
-    const piastra = new THREE.Group(); piastra.position.set(0, 0, PIASTRA_Z); scena.add(foglio, piastra);
+    const piastra = new THREE.Group(); piastra.position.set(0, 0, PIASTRA_Z); gCasa.add(foglio, piastra);
 
     // il percorso a mano: penna nera fine, il tratto da guidare col pennarello blu, i fatti a matita, lo stretto con l'evidenziatore sotto
     const INCHIOSTRO = { normale: ['#24211e', 2, 1], prossimo: ['#2c47c4', 3.6, 1], fatto: ['#9a958c', 1.5, 0.8], stretta: ['#f0a23a', 7, 0.55] }; // colore, px, opacità
@@ -360,35 +375,153 @@ export async function apriCasa(op) {
       piastra.add(m);
     }
 
-    // ---------- la camera: quella del render, adattata allo schermo senza mai tagliare parete e tavolo ----------
-    // Si vede sempre la lastra dalla riga 0 (sopra l'insegna) a 1,78 larghezze (sotto il cartone): la scala è la più grande che ci
-    // sta in larghezza e fra il bordo alto (zona sicura) e i tasti (o, coi tasti di lato, l'altezza intera); quello che avanza è buio.
+    // ---------- la giornata: la stessa carta, vista quasi dall'alto con la luce del giorno (B-vera, «giornata») ----------
+    // Il tavolo e il cartone sono semplici (si vedono appena ai bordi); il percorso è il pennarello largo della giornata, col bordo
+    // bianco; le tappe sono cartellini nella pagina (più sotto). Qui niente luce della lastra: vale solo dalla camera del render.
+    const SRGB = 'vec3 srgb(vec3 g) { return mix(g * 12.92, 1.055 * pow(max(g, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, g)); }';
+    const mTavolo = traccia(new THREE.ShaderMaterial({
+      uniforms: { uCentro: { value: new THREE.Vector2(0, PIASTRA_Z) } },
+      vertexShader: 'varying vec3 vP; void main() { vec4 p = modelMatrix * vec4(position, 1.0); vP = p.xyz; gl_Position = projectionMatrix * viewMatrix * p; }',
+      fragmentShader: SRGB + `uniform vec2 uCentro; varying vec3 vP;
+        void main() {
+          vec2 q = abs(vP.xz - uCentro) - vec2(0.5); float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+          float v = sin(vP.x * 210.0 + sin(vP.z * 19.0) * 2.4) * 0.5 + 0.5;               // la venatura
+          vec3 c = mix(vec3(0.085, 0.045, 0.024), vec3(0.125, 0.068, 0.036), v);
+          c *= (0.4 + 0.6 * smoothstep(0.0, 0.045, sd)) * (1.0 - 0.6 * smoothstep(0.6, 2.0, length(vP.xz - uCentro))); // l'ombra del cartone, il buio intorno
+          gl_FragColor = vec4(srgb(c), 1.0); }`,
+      depthWrite: false, depthTest: false }));
+    const tavolo = new THREE.Mesh(traccia(new THREE.PlaneGeometry(8, 8)), mTavolo);
+    tavolo.rotation.x = -Math.PI / 2; tavolo.position.set(0, 0, PIASTRA_Z); tavolo.renderOrder = 0;
+    const piastraG = new THREE.Group(); piastraG.position.set(0, 0, PIASTRA_Z);
+    const bordoCartone = new THREE.Mesh(traccia(new THREE.BoxGeometry(LATO + 0.012, PIANO, LATO + 0.012)), traccia(new THREE.MeshBasicMaterial({ color: 0xcdc6b8, depthTest: false, depthWrite: false })));
+    bordoCartone.position.y = PIANO / 2; bordoCartone.renderOrder = 1;
+    const cartaG = new THREE.Mesh(traccia(new THREE.PlaneGeometry(LATO, LATO)), traccia(new THREE.ShaderMaterial({
+      uniforms: { map: { value: tCartaMappa } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: SRGB + `uniform sampler2D map; varying vec2 vUv;
+        void main() { vec3 c = texture(map, vUv).rgb * vec3(0.95, 0.92, 0.85);              // la carta calda, alla luce del giorno
+          c *= 0.9 + 0.1 * smoothstep(1.3, 0.0, length(vUv - vec2(0.15, 0.9)));               // la lampada, in alto a sinistra
+          gl_FragColor = vec4(srgb(c), 1.0); }`,
+      depthWrite: false, depthTest: false })));
+    cartaG.rotation.x = -Math.PI / 2; cartaG.position.y = PIANO + 0.0002; cartaG.renderOrder = 2;
+    piastraG.add(bordoCartone, cartaG); gGiorno.add(tavolo, piastraG);
+    const mNastroG = (colore, px) => traccia(new THREE.ShaderMaterial({
+      uniforms: { uColore: { value: new THREE.Color(colore) }, uPx: { value: px }, uSchermo: { value: schermo } },
+      vertexShader: `attribute vec3 normale; attribute float lato; uniform vec2 uSchermo; uniform float uPx; varying float vLato;
+        void main() { vec4 c = projectionMatrix * modelViewMatrix * vec4(position, 1.0); float pxUnita = projectionMatrix[1][1] * uSchermo.y * 0.5 / c.w;
+          vLato = lato; gl_Position = projectionMatrix * modelViewMatrix * vec4(position + normale * lato * uPx / pxUnita * 0.5, 1.0); }`,
+      fragmentShader: SRGB + 'uniform vec3 uColore; varying float vLato; void main() { gl_FragColor = vec4(srgb(uColore), 1.0 - smoothstep(0.75, 1.0, abs(vLato))); }',
+      transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide }));
+    for (const t of tracciati) { // la lunghezza progressiva (per campionare) e il nastro della giornata
+      t.giorno = t.stretta && t.tipo !== 'fatto' ? 'stretta' : t.tipo;
+      t.cum = [0]; for (let i = 1; i < t.punti.length; i++) t.cum.push(t.cum[i - 1] + Math.hypot(t.punti[i][0] - t.punti[i - 1][0], t.punti[i][1] - t.punti[i - 1][1]));
+      let pts = t.punti.map(([x, y]) => sulPiano(x, y));
+      if (t.dritta) { const [a, b] = pts; pts = Array.from({ length: 41 }, (_, k) => a.clone().lerp(b, k / 40)); }
+      const g = geoNastro(pts, t.dritta ? 0.012 : 0);
+      if (!g) continue;
+      const su = t.giorno === 'prossimo' || t.giorno === 'stretta' ? 2 : 0;
+      const bordo = new THREE.Mesh(g, mNastroG('#fffaf0', LARGO_G[t.giorno] + 2.5)), nastro = new THREE.Mesh(g, mNastroG(COLORI_G[t.giorno], LARGO_G[t.giorno]));
+      bordo.renderOrder = 5 + su; nastro.renderOrder = 6 + su;
+      piastraG.add(bordo, nastro);
+    }
+    const nelMondo = ([x, y]) => sulPiano(x, y).add(piastra.position);
+    const campiona = (t, f) => { // il punto a una frazione della lunghezza del tratto
+      const L = t.cum.at(-1) * f; let i = t.cum.findIndex(c => c >= L); if (i <= 0) i = 1;
+      const u = (L - t.cum[i - 1]) / ((t.cum[i] - t.cum[i - 1]) || 1), a = t.punti[i - 1], b = t.punti[i];
+      return nelMondo([a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]);
+    };
+
+    // ---------- le pose della camera ----------
+    // La casa: la camera del render, adattata allo schermo senza mai tagliare parete e tavolo. Si vede sempre la lastra dalla riga 0
+    // (sopra l'insegna) a 1,78 larghezze (sotto il cartone): la scala è la più grande che ci sta in larghezza e fra il bordo alto
+    // (zona sicura) e i tasti (o, coi tasti di lato, l'altezza intera); quello che avanza è buio.
     const RIGA_FONDO = Math.max(1.78, ST.area_sicura_ws.fondo_mappa + 0.03);
+    let fit = { W: innerWidth, H: innerHeight, Wa: innerWidth, s: 0.5, ox: 0, oy: 0 };
     function adatta() {
-      const W = innerWidth, H = innerHeight, c = comandi?.getBoundingClientRect();
+      const W = innerWidth, H = innerHeight;
+      if (!contenitore?.isConnected) return { ...fit, W, H, Wa: W }; // in giornata la casa non c'è: resta l'ultima misura
+      const c = comandi?.isConnected ? comandi.getBoundingClientRect() : null;
       const laterale = c && c.width < W * 0.6 && c.left > W * 0.35; // tasti in colonna a destra (telefono girato, schermo largo)
       const Wa = laterale ? c.left : W, basso = (laterale || !c ? H : c.top) - 6;
       const alto = (parseFloat(getComputedStyle(contenitore).paddingTop) || 0) + 2;
       const s = Math.max(0.05, Math.min(Wa / WS, (basso - alto) / (RIGA_FONDO * WS)));
       return { W, H, Wa, s, ox: (Wa - WS * s) / 2, oy: basso - RIGA_FONDO * WS * s }; // in basso, sopra i tasti: quello che avanza va in alto
     }
-    let fit = adatta(), zoom = 1, verso = null;
-    function metti() {
+    fit = adatta();
+    const vC = occhio.clone().sub(guardato), D_CASA = vC.length(), TH_CASA = Math.atan2(vC.x, vC.z), PH_CASA = Math.asin(vC.y / D_CASA);
+    const CHINA = 0.38, ZOOM = 1.7; // chinarsi: prima la lastra avanza (solo zoom: la stanza resta esatta), poi la camera scende
+    function posaCasa(zoom = 1, verso = null) {
       const { W, H, s, ox, oy } = fit;
       let px = ox + s * WS / 2, py = oy + s * HS / 2, sz = s; // dove cade l'asse ottico della lastra, e la sua scala
-      if (zoom !== 1 && verso) { // chinarsi: la lastra avanza (zoom) e il centro del cartone scivola verso «verso»
-        const c = slab(new THREE.Vector3(0, PIANO, PIASTRA_Z)), cxs = ox + s * c.x * WS, cys = oy + s * (1 - c.y) * HS, k = (zoom - 1) / 0.8;
+      if (zoom !== 1 && verso) { // la lastra avanza e il centro del cartone scivola verso dove sarà nella giornata
+        const c = slab(new THREE.Vector3(0, PIANO, PIASTRA_Z)), cxs = ox + s * c.x * WS, cys = oy + s * (1 - c.y) * HS, k = (zoom - 1) / (ZOOM - 1);
         sz = s * zoom;
         px = cxs + (verso.x - cxs) * k - sz * (c.x - 0.5) * WS; py = cys + (verso.y - cys) * k - sz * (0.5 - c.y) * HS;
       }
-      const v = occhio.clone().sub(guardato), d = v.length(), th = Math.atan2(v.x, v.z), ph = Math.asin(v.y / d);
-      cam.fov = 2 * Math.atan(H / (2 * sz * F_PX)) / G; cam.aspect = W / H; cam.near = 0.06; cam.far = 30; cam.updateProjectionMatrix();
-      cam.projectionMatrix.elements[8] = 1 - 2 * px / W; cam.projectionMatrix.elements[9] = 2 * py / H - 1;
+      return { t: guardato.clone(), d: D_CASA, th: TH_CASA, ph: PH_CASA, fx: px / W, fy: py / H, fov: 2 * Math.atan(H / (2 * sz * F_PX)) / G, casa: true, zoom };
+    }
+    function metti(p) {
+      const { W, H } = fit;
+      cam.fov = p.fov; cam.aspect = W / H; cam.near = Math.min(0.06, p.d * 0.05); cam.far = 30; cam.updateProjectionMatrix();
+      cam.projectionMatrix.elements[8] = 1 - 2 * p.fx; cam.projectionMatrix.elements[9] = 2 * p.fy - 1; // il centro dove lo schermo è libero
       cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
-      cam.position.set(guardato.x + d * Math.cos(ph) * Math.sin(th), guardato.y + d * Math.sin(ph), guardato.z + d * Math.cos(ph) * Math.cos(th));
-      cam.up.set(-Math.sin(ph) * Math.sin(th), Math.cos(ph), -Math.sin(ph) * Math.cos(th)); cam.lookAt(guardato); cam.updateMatrixWorld();
+      cam.position.set(p.t.x + p.d * Math.cos(p.ph) * Math.sin(p.th), p.t.y + p.d * Math.sin(p.ph), p.t.z + p.d * Math.cos(p.ph) * Math.cos(p.th));
+      cam.up.set(-Math.sin(p.ph) * Math.sin(p.th), Math.cos(p.ph), -Math.sin(p.ph) * Math.cos(p.th)); cam.lookAt(p.t); cam.updateMatrixWorld();
     }
     const proietta = v => { const p = v.clone().project(cam); return { x: (p.x + 1) / 2 * fit.W, y: (1 - p.y) / 2 * fit.H }; };
+    let ora = posaCasa(), uCasa = 1, voli = null, vista = null;
+    // La giornata: nord in alto, quasi dall'alto, tutte le tappe e i tratti nell'area libera (sopra il foglio della lista), con almeno
+    // 8 km di lato: la carta riempie lo schermo. Distanza trovata per bisezione, poi il centro spostato sul centro dell'area.
+    function posaGiornata(area) {
+      const punti = [...tappe.map(t => nelMondo(t.xy)), ...tracciati.flatMap(t => t.punti.filter((_, i) => i % 8 === 0).map(nelMondo))]; // un punto ogni 8: basta, e il tocco non si blocca
+      const xs = punti.map(v => v.x), zs = punti.map(v => v.z);
+      const t = punti.length ? new THREE.Vector3((Math.min(...xs) + Math.max(...xs)) / 2, PIANO, (Math.min(...zs) + Math.max(...zs)) / 2) : new THREE.Vector3(0, PIANO, PIASTRA_Z);
+      const m = punti.length ? 4000 * K : LATO / 2;
+      punti.push(...[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => t.clone().add(new THREE.Vector3(a * m, 0, b * m))));
+      const q = { t, th: 0, ph: PH_G, fov: 24, d: 1, fx: (area.x0 + area.x1) / 2 / fit.W, fy: (area.y0 + area.y1) / 2 / fit.H, casa: false };
+      for (let giro3 = 0; giro3 < 4; giro3++) {
+        let lo = 0.05, hi = 20;
+        for (let k = 0; k < 24; k++) { // 24 dimezzamenti: la distanza giusta al millesimo
+          const d = Math.sqrt(lo * hi); metti({ ...q, d });
+          if (punti.every(v => { const s = proietta(v); return s.x >= area.x0 && s.x <= area.x1 && s.y >= area.y0 && s.y <= area.y1; })) hi = d; else lo = d;
+        }
+        q.d = hi; metti(q);
+        const s = punti.map(proietta), mx = (Math.min(...s.map(v => v.x)) + Math.max(...s.map(v => v.x))) / 2, my = (Math.min(...s.map(v => v.y)) + Math.max(...s.map(v => v.y))) / 2;
+        q.fx += ((area.x0 + area.x1) / 2 - mx) / fit.W; q.fy += ((area.y0 + area.y1) / 2 - my) / fit.H;
+      }
+      metti(ora);
+      return q;
+    }
+    // un volo fra due pose (la distanza in scala logaritmica). Casa <-> giornata: prima lo zoom sulla lastra, poi la camera si china
+    // fino alla vista dall'alto mentre la stanza svanisce (uCasa); al ritorno l'inverso. Con «riduci movimento»: subito.
+    const lerp = THREE.MathUtils.lerp, inOut = t => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+    const interpola = (da, a, e) => {
+      const et = da.d > a.d * 1.0001 || (da.casa && !a.casa) ? 1 - (1 - e) ** 2.6 : e ** 2.6;
+      return { t: da.t.clone().lerp(a.t, et), d: Math.exp(lerp(Math.log(da.d), Math.log(a.d), e)), th: da.th + (a.th - da.th) * e,
+        ph: lerp(da.ph, a.ph, e), fx: lerp(da.fx, a.fx, e), fy: lerp(da.fy, a.fy, e), fov: lerp(da.fov, a.fov, e) };
+    };
+    function vola(verso, ms = 1100) {
+      const da = { ...ora, t: ora.t.clone() }, entra = da.casa && !verso.casa, esce = !da.casa && verso.casa;
+      const mira = p => { metti(p); const q = proietta(new THREE.Vector3(0, PIANO, PIASTRA_Z)); metti(ora); return q; };
+      const china = entra ? posaCasa(ZOOM, mira(verso)) : esce ? posaCasa(ZOOM, mira(da)) : null;
+      return new Promise(ok => {
+        const passo = k => {
+          const e = inOut(k);
+          if (entra) {
+            if (e < CHINA) { ora = { ...interpola(da, china, e / CHINA), casa: true, zoom: 2 }; uCasa = 1; }
+            else { const z = (e - CHINA) / (1 - CHINA); ora = interpola(china, verso, z); uCasa = 1 - THREE.MathUtils.smoothstep(z, 0, 0.4); }
+          } else if (esce) {
+            if (e < 1 - CHINA) { const z = e / (1 - CHINA); ora = interpola(da, china, z); uCasa = THREE.MathUtils.smoothstep(z, 0.6, 1); }
+            else { const z = (e - (1 - CHINA)) / CHINA; ora = { ...interpola(china, verso, z), casa: true, zoom: 2 }; uCasa = 1; }
+          } else ora = { ...interpola(da, verso, e), casa: verso.casa };
+          if (k >= 1) { ora = verso; uCasa = verso.casa ? 1 : 0; }
+          metti(ora); chiesto = true;
+        };
+        if (ms === 0 || fermo) { voli = null; passo(1); return ok(); }
+        voli = { t0: performance.now(), ms, passo, fine: ok };
+        chiesto = true;
+      });
+    }
 
     // ---------- l'insegna (DOM: scritta e neon) sull'insegna del render ----------
     const mettiInsegna = () => {
@@ -419,7 +552,7 @@ export async function apriCasa(op) {
       }
     }
     const mettiEtichette = () => {
-      const fuori = zoom !== 1;
+      const fuori = !ora.casa || ora.zoom !== 1 || uCasa < 1;
       let sopra = null;
       for (const e of etichette) {
         e.el.style.opacity = fuori ? '0' : '1';
@@ -431,6 +564,114 @@ export async function apriCasa(op) {
         if (e.tipo === 'tappa') sopra = { x, y, w, h };
       }
     };
+
+    // ---------- la giornata: i cartellini delle tappe (B-vera, «cartellini»), nella pagina sopra la tela ----------
+    // Una carta per comune (Tradate con tre orari è una tappa sola), il numero della tappa, gli orari (quello del prossimo in grassetto,
+    // gli esiti colorati), la nota del punto stretto su chi arriva dopo. Il prossimo ha l'anello; una tappa finita resta numero ed esito.
+    // Toccandola si apre la sua scheda (#/i/N, la scheda dell'app). Sul tratto da guidare: minuti e km di OpenRouteService.
+    const carteEl = crea('div', 'casa-carte'); pulizie.push(() => carteEl.remove());
+    let spilli = [], tagTratto = null;
+    function creaCarte() {
+      carteEl.replaceChildren(); spilli = []; tagTratto = null;
+      if (!giro || !vista) return;
+      const perComune = new Map();
+      for (const t of tappe) {
+        const c = perComune.get(t.chiave) ?? { t, numeri: [], interventi: [] };
+        c.numeri.push(giro.tappe.indexOf(t.da) + 1); c.interventi.push(...(t.interventi ?? []));
+        perComune.set(t.chiave, c);
+      }
+      // poca mappa (bassa, o stretta come a 320 px): le tappe non accese diventano «3 · 11:00»; il resto è nella lista sotto
+      const area = vista.area(), bassa = area.y1 - area.y0 < 200 || area.x1 - area.x0 < 320;
+      for (const [k, { t, numeri, interventi }] of perComune) {
+        const acceso = interventi.some(i => i.prossimo), fatto = interventi.length > 0 && interventi.every(i => i.esito);
+        const primo = interventi.find(i => !i.esito) ?? interventi[0];
+        const n = crea('span', 'n', numeri.join('·'));
+        let dentro;
+        if (fatto) { const esiti = [...new Set(interventi.map(i => i.esito))]; dentro = [n, crea('span', esiti.includes('KO') ? 'ko' : 'ok', esiti.join('/'))]; }
+        else if (bassa && !acceso) dentro = [n, primo?.ora ?? ''];
+        else {
+          const ore = interventi.flatMap((i, j) => [j ? ' · ' : null, i.esito ? crea('span', i.esito === 'OK' ? 'ok' : 'ko', `${i.ora} ${i.esito}`) : i.prossimo ? crea('b', '', i.ora) : i.ora]);
+          const nota = giro.stretto?.a === k && crea('span', 'stretta', ` · solo ${giro.stretto.minuti} min dopo ${giro.stretto.nomeDa}`);
+          dentro = [n, t.nome, crea('small', '', ...ore, nota)];
+        }
+        const carta = crea('a', fatto || (bassa && !acceso) ? 'carta corta' : 'carta', ...dentro);
+        if (primo) carta.href = `#/i/${primo.i}`;
+        const el = crea('div', `spillo${acceso ? ' acceso' : ''}${fatto ? ' fatto' : ''}`, crea('span', 'filo'), crea('span', acceso ? 'pallino' : 'testa'), carta);
+        carteEl.append(el);
+        spilli.push({ el, carta, v: nelMondo(t.xy) });
+      }
+      const tp = tracciati.find(x => x.tipo === 'prossimo');
+      if (tp && tp.minuti != null) {
+        tagTratto = { el: crea('span', 'tag-tratto', `${durata(tp.minuti)}${tp.metri ? ` · ${(tp.metri / 1000).toFixed(1).replace('.', ',')} km` : ''}`), t: tp };
+        carteEl.append(tagTratto.el);
+      }
+    }
+    // un segmento attraversa un riquadro? (Liang-Barsky); due fili si incrociano?
+    function segBox(a, b, m) {
+      if (m.seg) return false;
+      let t0 = 0, t1 = 1; const dx = b.x - a.x, dy = b.y - a.y;
+      for (const [pp, q] of [[-dx, a.x - m.x0], [dx, m.x1 - a.x], [-dy, a.y - m.y0], [dy, m.y1 - a.y]]) {
+        if (pp === 0) { if (q < 0) return false; continue; }
+        const t = q / pp; if (pp < 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+        if (t0 > t1) return false;
+      }
+      return true;
+    }
+    function segSeg(a, b, c, d) {
+      const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+      if (Math.hypot(a.x - c.x, a.y - c.y) < 1) return false;
+      return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
+    }
+    const tocca = (b, lista) => lista.some(m => (m.seg ? segBox(m.seg[0], m.seg[1], b) : b.x0 < m.x1 && b.x1 > m.x0 && b.y0 < m.y1 && b.y1 > m.y0));
+    const sopra = (b, lista) => lista.reduce((t, m) => t + (m.seg ? (segBox(m.seg[0], m.seg[1], b) ? 400 : 0) : Math.max(0, Math.min(b.x1, m.x1) - Math.max(b.x0, m.x0)) * Math.max(0, Math.min(b.y1, m.y1) - Math.max(b.y0, m.y0))), 0);
+    // I cartellini non si coprono: prima il prossimo, poi le tappe da fare dall'alto in giù, per ultime quelle fatte; ognuno prova
+    // posti sempre più lontani dal suo punto e prende il primo libero (niente carte, punti, tratto da guidare e tratto stretto sotto).
+    function posiziona() {
+      if (voli || ora.casa || !vista || !carteEl.isConnected) return;
+      const A = vista.area(), messi = [];
+      const pronti = spilli.map(s => ({ s, p: proietta(s.v) }));
+      for (const { p } of pronti) messi.push({ x0: p.x - 15, x1: p.x + 15, y0: p.y - 15, y1: p.y + 15, testa: true });
+      for (const t of tracciati.filter(x => x.tipo === 'prossimo' || x.giorno === 'stretta'))
+        for (let k = 0; k < 13; k++) { const q = proietta(campiona(t, 0.04 + k * 0.92 / 12)); messi.push({ x0: q.x - 7, x1: q.x + 7, y0: q.y - 7, y1: q.y + 7, strada: true }); }
+      const peso = x => (x.s.el.classList.contains('acceso') ? 0 : x.s.el.classList.contains('fatto') ? 2 : 1);
+      pronti.sort((a, b) => peso(a) - peso(b) || a.p.y - b.p.y);
+      const ac = api.angoliCartone(), P = { x0: Math.min(...ac.map(v => v.x)) + 4, x1: Math.max(...ac.map(v => v.x)) - 4, y0: Math.min(...ac.map(v => v.y)) + 4, y1: Math.max(...ac.map(v => v.y)) - 4 };
+      const dentro = b => b.y0 > Math.max(A.y0, P.y0) && b.y1 < Math.min(A.y1, P.y1) && b.x0 > Math.max(A.x0, P.x0) && b.x1 < Math.min(A.x1, P.x1);
+      for (const { s, p } of pronti) {
+        const mio = messi.find(m => m.testa && Math.abs((m.x0 + m.x1) / 2 - p.x) < 0.01 && Math.abs((m.y0 + m.y1) / 2 - p.y) < 0.01);
+        const w = s.carta.offsetWidth, hh = s.carta.offsetHeight, prove = [];
+        for (const r of [10, 18, 28, 40, 54, 70, 88, 108, 130]) for (let k = 0; k < 16; k++) {
+          const th = k * Math.PI / 8, dx = Math.sin(th), dy = -Math.cos(th);
+          const ext = Math.abs(dx) * w / 2 + Math.abs(dy) * hh / 2, cx = p.x + dx * (r + ext), cy = p.y + dy * (r + ext);
+          const dentroCarta = Math.min(Math.abs(dx) > 1e-6 ? w / 2 / Math.abs(dx) : Infinity, Math.abs(dy) > 1e-6 ? hh / 2 / Math.abs(dy) : Infinity);
+          const lungo = r + ext - dentroCarta; // il filo arriva al bordo della carta
+          prove.push({ r: lungo, th, box: { x0: cx - w / 2 - 3, x1: cx + w / 2 + 3, y0: cy - hh / 2 - 6, y1: cy + hh / 2 + 6 }, fine: { x: p.x + dx * lungo, y: p.y + dy * lungo }, costo: r + (1 - Math.cos(th)) * 12 });
+        }
+        prove.sort((x, y) => x.costo - y.costo);
+        const ostacoli = messi.filter(m => m !== mio);
+        const filoLibero = q => !ostacoli.some(m => (m.seg ? segSeg(p, q.fine, ...m.seg) : !m.strada && segBox(p, q.fine, m)));
+        const libera = prove.find(q => dentro(q.box) && !tocca(q.box, ostacoli) && filoLibero(q))
+          ?? prove.filter(q => dentro(q.box)).map(q => ({ ...q, c: sopra(q.box, ostacoli) })).sort((x, y) => x.c - y.c)[0] ?? prove[0]; // nessun posto libero: il meno coperto
+        messi.push(libera.box, { seg: [p, libera.fine] });
+        const st = s.el.style;
+        st.setProperty('--r', `${libera.r}px`); st.setProperty('--ang', `${libera.th.toFixed(3)}rad`);
+        st.setProperty('--cx', `${(libera.box.x0 + 3 - p.x).toFixed(1)}px`); st.setProperty('--cy', `${(libera.box.y0 + 6 - p.y).toFixed(1)}px`);
+        st.setProperty('--x', `${p.x.toFixed(1)}px`); st.setProperty('--y', `${p.y.toFixed(1)}px`);
+      }
+      if (tagTratto) { // il tempo del tratto: sul nastro, dove non copre nessuno, come i tempi di Maps
+        const x = tagTratto, w = x.el.offsetWidth, hh = x.el.offsetHeight, prove = [];
+        for (const off of [0, 1, -1, 2, -2]) for (const f of [0.5, 0.4, 0.6, 0.3, 0.7, 0.22, 0.78, 0.14, 0.86]) {
+          const a = proietta(campiona(x.t, Math.max(0, f - 0.02))), b = proietta(campiona(x.t, Math.min(1, f + 0.02)));
+          const L = Math.hypot(b.x - a.x, b.y - a.y) || 1, nx = -(b.y - a.y) / L, ny = (b.x - a.x) / L, sp = off * (Math.abs(nx) * w / 2 + Math.abs(ny) * hh / 2 + 5);
+          prove.push({ x: (a.x + b.x) / 2 + nx * sp, y: (a.y + b.y) / 2 + ny * sp });
+        }
+        const box = q => ({ x0: q.x - w / 2, x1: q.x + w / 2, y0: q.y - hh / 2, y1: q.y + hh / 2 });
+        const libera = prove.find(q => dentro(box(q)) && !tocca(box(q), messi.filter(m => !m.strada)))
+          ?? prove.map(q => ({ ...q, c: sopra(box(q), messi.filter(m => !m.strada)) + (dentro(box(q)) ? 0 : 1e6) })).sort((u, v) => u.c - v.c)[0];
+        x.el.style.transform = `translate(${(libera.x - w / 2).toFixed(1)}px, ${(libera.y - hh / 2).toFixed(1)}px)`;
+      }
+    }
+    const mostraCarte = () => { if (!carteEl.isConnected) { creaCarte(); document.body.append(carteEl); } posiziona(); };
 
     // ---------- i LED: tre colori per i tre tratti e una sfumatura per il diffusore; colore scelto o la cornice che gira ----------
     const coloreFisso = op.colore ?? null;
@@ -453,15 +694,23 @@ export async function apriCasa(op) {
 
     // ---------- disegno ----------
     const vInv = new THREE.Matrix4(), angolo = new THREE.Vector3();
+    // giornata: la carta del giorno; casa: la lastra (il fondo), poi sopra la carta, il percorso e i poster che prendono la sua luce.
+    // Mentre ci si china: prima la giornata, sopra la stanza che svanisce (uAlpha = uCasa).
     function disegna() {
-      vInv.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).invert();
-      mFondo.uniforms.uInvVP.value.copy(vInv); mFondo.uniforms.uOcchio.value.copy(cam.position);
       r.autoClear = false; r.clear();
-      r.render(scenaFondo, camFondo); r.render(scena, cam);
+      if (uCasa < 1) { gCasa.visible = false; gGiorno.visible = true; r.render(scena, cam); }
+      if (uCasa > 0) {
+        vInv.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).invert();
+        mFondo.uniforms.uInvVP.value.copy(vInv); mFondo.uniforms.uOcchio.value.copy(cam.position);
+        U.uAlpha.value = uCasa;
+        r.render(scenaFondo, camFondo);
+        gCasa.visible = true; gGiorno.visible = false; r.render(scena, cam);
+      }
       for (const p of sopraTela) {
+        if (uCasa <= 0) { p.img.style.opacity = '0'; continue; }
         const { width: W_, height: H_ } = p.m.geometry.parameters;
         const q = [[-1, 1], [1, 1], [1, -1], [-1, -1]].map(([sx, sy]) => proietta(angolo.set(sx * W_ * (0.5 - p.bx), sy * H_ * (0.5 - p.by), 0).applyMatrix4(p.m.matrixWorld)));
-        p.img.style.transform = matrice3d(p.w, p.h, q); p.img.style.opacity = '1';
+        p.img.style.transform = matrice3d(p.w, p.h, q); p.img.style.opacity = String(uCasa);
       }
       mettiEtichette();
     }
@@ -470,7 +719,8 @@ export async function apriCasa(op) {
     let ledVivi = !fermo && (!coloreFisso || op.insegna === 'arcobaleno');
     function ciclo(t) {
       if (!vivo) return;
-      if (ledVivi && t - ultimoLed >= 32) {
+      if (voli) { const v = voli, k = Math.min(1, Math.max(0, (t - v.t0) / v.ms)); v.passo(k); if (k >= 1) { voli = null; v.fine(); } }
+      if (ledVivi && uCasa > 0 && t - ultimoLed >= 32) {
         if (prec && intervalli.length < 30) intervalli.push(t - prec);
         if (intervalli.length === 30) { // il telefono non ce la fa: i LED restano fermi, la stanza resta
           const m = [...intervalli].sort((x, y) => x - y)[15];
@@ -487,14 +737,19 @@ export async function apriCasa(op) {
       fit = adatta();
       r.setSize(fit.W, fit.H, false);
       schermo.set(fit.W, fit.H); cocSchermo.value = COC * fit.s * r.getPixelRatio(); camMossa = true;
-      metti(); mettiInsegna(); coloriLed(); chiesto = true;
+      chiesto = true;
+      if (voli) return; // a fine volo
+      if (ora.casa) { ora = posaCasa(); metti(ora); mettiInsegna(); coloriLed(); }
+      else if (vista) { ora = posaGiornata(vista.area()); metti(ora); posiziona(); }
     };
+    addEventListener('resize', misura); pulizie.push(() => removeEventListener('resize', misura));
     ro = new ResizeObserver(() => misura());
     const osserva = () => { ro.disconnect(); ro.observe(contenitore); if (comandi) ro.observe(comandi); };
 
     strato.append(tela, ...sopraTela.map(p => p.img), ...etichette.map(e => e.el));
     document.body.append(strato);
     misura();
+    gGiorno.visible = true; await r.compileAsync(scena, cam); // anche i programmi della giornata: niente compilazioni durante il volo
     await r.compileAsync(scena, cam); await r.compileAsync(scenaFondo, camFondo);
     if (!vivo) throw new Error('chiusa');
     disegna(); chiesto = false;
@@ -506,20 +761,25 @@ export async function apriCasa(op) {
       lento: 0,
       // l'app ha ridisegnato la casa con gli stessi dati: la stanza resta, si riaggancia a insegna e tasti nuovi
       lega: o => { ({ contenitore, insegnaEl, comandi } = o); osserva(); misura(); },
-      // «Il giro di oggi»: la lastra avanza verso il cartone (la camera resta dov'è e stringe il campo), poi l'app apre la lista
-      chinati: (ms = 650) => new Promise(ok => {
-        if (fermo || !vivo) return ok();
-        const t0 = performance.now();
-        verso = { x: fit.Wa / 2, y: fit.H * 0.45 };
-        const passo = t => {
-          if (!vivo) return ok();
-          const k = Math.min(1, Math.max(0, (t - t0) / ms)), e = k * k * (3 - 2 * k);
-          zoom = Math.exp(Math.log(1.8) * e);
-          metti(); chiesto = true;
-          if (k < 1) requestAnimationFrame(passo); else ok();
-        };
-        requestAnimationFrame(passo);
-      }),
+      // «Il giro di oggi»: ci si china sul tavolo e la carta resta davanti, coi cartellini. v = { area: () => { x0, x1, y0, y1 }, ms }:
+      // l'area dello schermo libera per la carta (sopra o accanto al foglio della lista)
+      giornata: async v => {
+        vista = v;
+        await vola(posaGiornata(v.area()), v.ms ?? 1100);
+        if (vivo && vista === v && !ora.casa) mostraCarte();
+      },
+      // «Parete» o il tasto indietro: si torna alla stanza
+      casa: async o => { // o: la casa nuova (contenitore, insegna, tasti), a cui la stanza si riaggancia
+        vista = null; carteEl.remove();
+        if (o) { ({ contenitore, insegnaEl, comandi } = o); osserva(); }
+        if (ora.casa && !voli) return misura();
+        fit = adatta();
+        await vola(posaCasa(), 1100);
+        if (vivo && ora.casa) misura();
+      },
+      modo: () => (voli ? 'volo' : ora.casa ? 'casa' : 'giornata'),
+      puntiTappe: () => tappe.map(t => proietta(nelMondo(t.xy))), // per le prove: le tappe sullo schermo
+      posiziona,
       chiudi,
       // per le prove
       info: () => ({ poster: poster.children.filter(m => m.renderOrder === 21).length, sopra: sopraTela.length, tappe: tappe.map(t => ({ chiave: t.chiave, stato: t.stato })),
@@ -542,8 +802,7 @@ export async function apriCasa(op) {
         return [[bb.min.x, bb.max.y], [bb.max.x, bb.max.y], [bb.max.x, bb.min.y], [bb.min.x, bb.min.y]].map(([x, y]) => proietta(new THREE.Vector3(x, y, 0).applyMatrix4(m.matrixWorld))); }),
       fotografa: () => { disegna(); const gl = r.getContext(), w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, a = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, a); return { w, h, a, dpr: w / fit.W }; },
     };
-    window.__casa3d = api;
-    return api;
+    return api; // window.__casa3d lo mette l'app, quando questa stanza è davvero quella in uso
   } catch (e) {
     chiudi();
     throw e;

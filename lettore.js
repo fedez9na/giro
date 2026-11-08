@@ -2,12 +2,12 @@
 // (altre colonne, un altro committente, l'Excel). Righe e colonne vengono dai BORDI della tabella,
 // le intestazioni danno solo il nome alla colonna: l'ordine del testo nel PDF non è affidabile.
 
-const COLONNE = {
+export const COLONNE = {
   cliente: 'CLIENTE', tipologia: 'TIPOLOGIA ODL', comune: 'INDIRIZZO', orario: 'ORARIO',
   esito: 'ESITO ODL', note: 'NOTE', motivoKo: 'MOTIVO KO', euroExtra: 'EURO EXTRA',
 };
-const GIORNI = ['DOMENICA', 'LUNEDI', 'MARTEDI', 'MERCOLEDI', 'GIOVEDI', 'VENERDI', 'SABATO'];
-const MESI = ['GENNAIO', 'FEBBRAIO', 'MARZO', 'APRILE', 'MAGGIO', 'GIUGNO', 'LUGLIO', 'AGOSTO',
+export const GIORNI = ['DOMENICA', 'LUNEDI', 'MARTEDI', 'MERCOLEDI', 'GIOVEDI', 'VENERDI', 'SABATO'];
+export const MESI = ['GENNAIO', 'FEBBRAIO', 'MARZO', 'APRILE', 'MAGGIO', 'GIUGNO', 'LUGLIO', 'AGOSTO',
   'SETTEMBRE', 'OTTOBRE', 'NOVEMBRE', 'DICEMBRE'];
 
 const r1 = v => Math.round(v * 10) / 10;

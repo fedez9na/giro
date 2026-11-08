@@ -50,7 +50,16 @@ export function validaParete(j) {
     .filter(t => Array.isArray(t) && immagine(t[0]) && intero(t[1]) && intero(t[2])).slice(0, 60)
     .map(([url, col, row]) => ({ url, col, row }));
   if (j?.v !== 1 || !tessere.length) return null;
-  return { colore: /^#[0-9a-f]{6}$/i.test(j.colore) ? j.colore : null, tessere };
+  const spazio = typeof j.spazio === 'number' && j.spazio >= 0 && j.spazio <= 10 ? j.spazio : undefined; // cm fra le card, dal poster shop
+  return { colore: /^#[0-9a-f]{6}$/i.test(j.colore) ? j.colore : null, tessere, ...(spazio === undefined ? {} : { spazio }) };
+}
+
+// La misura delle card e lo spazio fra loro: `spazio` in cm come sul poster shop (Larghe 3, Vicine 1,2, Attaccate 0), in proporzione a
+// una copertina larga 17 cm; senza, gli 8 px di sempre. Le card sono 0,65 larghe/alte.
+export function misureMuro(nc, nr, larga, alta, spazio) {
+  if (typeof spazio !== 'number') { const gap = 8; return { w: Math.min((larga - gap * (nc - 1)) / nc, ((alta - gap * (nr - 1)) / nr) * 0.65), gap }; }
+  const k = spazio / 17, w = Math.min(larga / (nc + (nc - 1) * k), alta / (nr / 0.65 + (nr - 1) * k));
+  return { w, gap: w * k };
 }
 
 // «Una volta e basta»: il codice di collegamento del poster shop si mette in Giro una volta sola; poi ogni «Pubblica su
@@ -97,14 +106,16 @@ export async function costruisciMuro(larga, alta) {
   const salvata = await leggiCopertine();
   const composta = Array.isArray(salvata) ? null : salvata;
   if (!composta && !salvata.length) return null;
-  const gap = 8, muro = el('div', 'muro');
+  let gap = 8;
+  const muro = el('div', 'muro');
   let scelte;
   if (composta) {
     // la parete com'è stata composta sul poster shop: stesse posizioni, stesso colore del muro, niente caso
     const cols = composta.tessere.map(t => t.col), rows = composta.tessere.map(t => t.row);
     const c0 = Math.min(...cols), r0 = Math.min(...rows), nc = Math.max(...cols) - c0 + 1, nr = Math.max(...rows) - r0 + 1;
-    const w = Math.min((larga - gap * (nc - 1)) / nc, ((alta - gap * (nr - 1)) / nr) * 0.65);
-    Object.assign(muro.style, { gridTemplateColumns: `repeat(${nc}, ${w}px)`, gridTemplateRows: `repeat(${nr}, ${w / 0.65}px)`, justifyContent: 'center', alignContent: 'center' });
+    const m = misureMuro(nc, nr, larga, alta, composta.spazio), w = m.w;
+    gap = m.gap;
+    Object.assign(muro.style, { gap: `${gap}px`, gridTemplateColumns: `repeat(${nc}, ${w}px)`, gridTemplateRows: `repeat(${nr}, ${w / 0.65}px)`, justifyContent: 'center', alignContent: 'center' });
     scelte = composta.tessere.map(t => ({ url: t.url, colonna: t.col - c0 + 1, riga: t.row - r0 + 1 }));
   } else {
     const mescolate = salvata.map(b => [Math.random(), b]).sort((a, b) => a[0] - b[0]).map(x => x[1]); // ogni mattina un'altra parete

@@ -50,15 +50,41 @@ export const collegatoCome = () => leggiMemoria(); // { id, nome, … } di chi �
 const scriviMemoria = p => { try { localStorage.setItem(MEMORIA, JSON.stringify(p)); } catch { /* pieno: si rilegge dal server */ } };
 
 const MESSAGGI = { 'Invalid login credentials': 'Email o password non giuste' };
-const errore = (e, base) => new Error(MESSAGGI[e?.message] ?? (e?.status >= 500 || !navigator.onLine || e?.name === 'AuthRetryableFetchError' ? 'Non riesco a parlare col server: controlla la rete' : base));
+// il 429 di Supabase arriva in JSON e si riconosce; uno senza JSON (pagina HTML di un CDN) supabase-js lo passa senza il codice:
+// lì resta il messaggio generico (critico 29/10)
+const errore = (e, base) => new Error(MESSAGGI[e?.message] ?? (e?.status === 429 ? 'Troppi tentativi di fila: aspetta qualche minuto e riprova'
+  : e?.status >= 500 || !navigator.onLine || e?.name === 'AuthRetryableFetchError' ? 'Non riesco a parlare col server: controlla la rete' : base));
+const credenzialiSbagliate = e => e?.code === 'invalid_credentials' || e?.message === 'Invalid login credentials';
+
+// La password che dà l'ufficio (generaPassword in gestore.js): 12 fra lettere minuscole senza i, l, o e cifre senza 0, 1, a gruppi
+// di 4 coi trattini. Scritta senza trattini, con spazi o in maiuscolo è la stessa: si prova prima la forma giusta, poi com'è scritta
+// (una password scelta da lui che le somiglia entra al secondo tentativo).
+export function variantiPassword(pw) {
+  const nuda = pw.toLowerCase().replace(/[\s\-‐-―−]/g, '');
+  const giusta = /^[a-hjkmnp-z2-9]{12}$/.test(nuda) ? nuda.replace(/(.{4})(?=.)/g, '$1-') : null;
+  return giusta && giusta !== pw ? [giusta, pw] : [pw];
+}
 
 // Si entra una volta: da qui la sessione si rinnova da sola e la chiave resta nel browser.
 export async function entra(email, password) {
   const sb = await server();
-  const e = email.trim().toLowerCase();
-  const d = await daPassword(e, password);
-  const { data, error } = await sb.auth.signInWithPassword({ email: e, password: d.accesso });
-  if (error) throw errore(error, 'Email o password non giuste');
+  // caratteri invisibili e una virgola o un punto in coda arrivano copiando l'email da un messaggio: in un'email vera non ci sono
+  const e = email.replace(/[\u00AD\u200B-\u200D\u2060\uFEFF]/g, '').trim().replace(/[,;.]+$/, '').toLowerCase();
+  let d, risposta;
+  for (const pw of variantiPassword(password)) {
+    d = await daPassword(e, pw);
+    risposta = await sb.auth.signInWithPassword({ email: e, password: d.accesso });
+    if (!credenzialiSbagliate(risposta.error)) break;
+  }
+  const { data, error } = risposta;
+  if (error && !credenzialiSbagliate(error)) throw errore(error, 'Non riesco a farti entrare con questo accesso: chiedi all’ufficio');
+  if (error) {
+    // il server non dice quale dei due è sbagliato: lo si chiede alla funzione (Federico, 29/10: «è sbagliata l'email», «è sbagliata la password»);
+    // se non risponde entro 4 s (partenza a freddo) o va in errore, il messaggio resta generico invece di accusare l'email
+    const esiste = await Promise.race([chiama('controlla-email', { email: e }).then(r => (typeof r?.esiste === 'boolean' ? r.esiste : null)), new Promise(ok => setTimeout(ok, 4000, null))]).catch(() => null);
+    throw Object.assign(new Error(esiste === false ? 'L’email è sbagliata: con questa email non c’è nessun accesso. Controllala lettera per lettera.'
+      : esiste ? 'La password è sbagliata.' : 'Email o password sbagliata: adesso non riesco a controllare quale delle due.'), { campo: esiste === false ? 'email' : esiste ? 'password' : null });
+  }
   const id = data.user.id;
   const [p, c] = await Promise.all([
     sb.from('persone').select('id, nome, email, ruolo, kid, pubblica').eq('id', id).maybeSingle(),
@@ -123,13 +149,18 @@ export async function accessoNuovo(email, password) {
 // Cambiare la propria email o password: stessa chiave, avvolta con la nuova. Poi si rientra con quella nuova.
 export async function cambiaMioAccesso(p, vecchiaPassword, email, password) {
   const sb = await server();
-  const vecchia = await daPassword(p.email, vecchiaPassword);
   const { data: c, error } = await sb.from('chiavi').select('privata').eq('persona', p.id).single();
   if (error) throw errore(error, 'Non riesco a leggere la tua chiave');
   const e = email.trim().toLowerCase();
   const nuova = await daPassword(e, password);
-  let privata;
-  try { privata = await riavvolgi(c.privata, vecchia.apri, nuova.apri); } catch { throw new Error('La password attuale non è giusta'); }
+  let vecchia, privata, giusta;
+  for (const pw of variantiPassword(vecchiaPassword)) { // quella dell'ufficio vale anche scritta senza trattini, come all'accesso
+    vecchia = await daPassword(p.email, pw);
+    try { privata = await riavvolgi(c.privata, vecchia.apri, nuova.apri); giusta = pw; break; } catch { /* la prossima forma */ }
+  }
+  if (!privata) throw new Error('La password attuale non è giusta');
+  // uguale è la stessa password anche scritta senza trattini (l'ufficio la conosce); due password diverse solo per una maiuscola no
+  if (variantiPassword(password).includes(giusta)) throw new Error('La password nuova è uguale a quella di adesso.');
   await chiama('mio-accesso', { vecchio: vecchia.accesso, email: e, accesso: nuova.accesso, privata });
   // da qui sul server vale già la nuova: se il rientro non riesce, «riprova» con la vecchia non funzionerebbe più
   try { return await entra(e, password); } catch {

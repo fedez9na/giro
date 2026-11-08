@@ -61,7 +61,8 @@ export function valida(j) {
 }
 
 // la parete composta sul poster shop viaggia nella forma del suo codice; le foto (un elenco di immagini) restano nel telefono
-export const aCodice = p => (p && !Array.isArray(p) && Array.isArray(p.tessere) ? { v: 1, colore: p.colore, tessere: p.tessere.map(t => [t.url, t.col, t.row]) } : null);
+export const aCodice = p => (p && !Array.isArray(p) && Array.isArray(p.tessere)
+  ? { v: 1, colore: p.colore, tessere: p.tessere.map(t => [t.url, t.col, t.row]), ...(typeof p.spazio === 'number' ? { spazio: p.spazio } : {}) } : null); // spazio: cm fra le card
 
 // fra quella del telefono e quella del server: 'locale' = va mandata, 'remota' = va presa, null = sono uguali
 export function piuNuova(locale, remota) {
